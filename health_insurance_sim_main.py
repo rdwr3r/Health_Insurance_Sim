@@ -246,7 +246,7 @@ class HealthSimulation:
         
         # Clean up and calculate daily probabilities
         events_df = events_df.dropna()
-        events_df['daily_prob'] = events_df['mean_yearly_occurrences'] / 365.0 / n_family_members
+        events_df['daily_prob'] = events_df['mean_yearly_occurrences'] / 365.0 / self.n_family_members
         
         return events_df
     
@@ -468,7 +468,7 @@ class HealthSimulation:
         print(f"{str(start)}: Using Joblib with {n_jobs} cores to analyze {len(self.plans)} plans")
         
         # Run parallel processing with Joblib and collect results
-        results = Parallel(n_jobs=n_jobs, verbose=10)(
+        results = Parallel(n_jobs=n_jobs, verbose=30)(
             delayed(process_single_plan)(plan_name, plan)
             for plan_name, plan in self.plans.items()
         )
