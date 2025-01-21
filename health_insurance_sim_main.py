@@ -246,7 +246,7 @@ class HealthSimulation:
         
         # Clean up and calculate daily probabilities
         events_df = events_df.dropna()
-        events_df['daily_prob'] = events_df['mean_yearly_occurrences'] / 365.0
+        events_df['daily_prob'] = events_df['mean_yearly_occurrences'] / 365.0 / n_family_members
         
         return events_df
     
@@ -444,41 +444,41 @@ class HealthSimulation:
 # =============================================================================
 
     def run_cost_analysis(self) -> None:
-       """
-       Coordinate parallel cost calculations across all insurance plans using Joblib.
-       Each plan's calculations run on a separate CPU core when possible, with results
-       automatically stored in each plan's cost_results attribute.
-       """
-       # Verify we have simulation data to analyze
-       if self.sim_data is None:
-           raise ValueError("Must run simulation before calculating costs")
-       
-       # Get the raw costs that will be needed by all plans
-       event_costs = self.raw_costs
-       
-       # Define a simple worker function that Joblib can parallelize
-       def process_single_plan(plan_name, plan):
-           """Process cost calculations for a single plan."""
-           print(f"Started processing {plan_name}")
-           plan.calculate_costs(
-               simulation_events=self.sim_data,
-               raw_costs=event_costs
-           )
-           print(f"Completed calculations for {plan_name}")
-       
-       # Determine number of cores to use (never more than available plans)
-       n_jobs = min(len(self.plans), os.cpu_count())
-       start = datetime.now()
-       print(f"{str(start)}: Using Joblib with {n_jobs} cores to analyze {len(self.plans)} plans")
-       
-       # Run parallel processing with Joblib
-       Parallel(n_jobs=n_jobs, verbose=30)(
-           delayed(process_single_plan)(plan_name, plan)
-           for plan_name, plan in self.plans.items()
-       )
-       
-       end = datetime.now()
-       print(f"{str(end)}: Complete. Runtime: {end-start}.")
+        """
+        Coordinate parallel cost calculations across all insurance plans using Joblib.
+        Each plan runs on a separate CPU core when possible.
+        """
+        if self.sim_data is None:
+            raise ValueError("Must run simulation before calculating costs")
+        
+        def process_single_plan(plan_name, plan):
+            """Process cost calculations for a single plan and return results."""
+            print(f"Started processing {plan_name}")
+            cost_results = plan.calculate_costs(
+                simulation_events=self.sim_data,
+                raw_costs=self.raw_costs
+            )
+            print(f"Completed calculations for {plan_name}")
+            return (plan_name, cost_results)  # Return tuple of name and results
+        
+        # Determine number of cores to use
+        n_jobs = min(len(self.plans), os.cpu_count())
+        
+        start = datetime.now()
+        print(f"{str(start)}: Using Joblib with {n_jobs} cores to analyze {len(self.plans)} plans")
+        
+        # Run parallel processing with Joblib and collect results
+        results = Parallel(n_jobs=n_jobs, verbose=10)(
+            delayed(process_single_plan)(plan_name, plan)
+            for plan_name, plan in self.plans.items()
+        )
+        
+        # Store results back in the main process's plan objects
+        for plan_name, cost_results in results:
+            self.plans[plan_name].cost_results = cost_results
+            
+        end = datetime.now()
+        print(f"{str(end)}: Complete. Runtime: {end-start}.")
 
     def summarize_events(self, sim_index: int, family_member: Optional[str] = None) -> None:
         """
@@ -616,7 +616,7 @@ class HealthSimulation:
                     density=True, label=f"{plan}\nμ=${mean:,.0f}, σ^2=${std:,.0f}")
             
             # Plot cumulative distribution
-            ax2.hist(yearly_totals, bins=30, density=True, cumulative=True,
+            ax2.hist(yearly_totals, bins=30, alpha = 0.3, density=True, cumulative=True,
              histtype='stepfilled', color=color, label=plan)
         
         # Customize histogram subplot
