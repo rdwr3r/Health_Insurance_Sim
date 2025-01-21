@@ -71,14 +71,16 @@ class PlanParameters:
         
         # Process each simulation separately
         for sim in range(n_simulations):
-            if sim % 10 == 0:
-                print(f"{str(datetime.now())}: Running Simulation {sim} of {n_simulations}...")
+# =============================================================================
+#             if sim % 10 == 0: #Not printed using joblig parallelization
+#                 print(f"{str(datetime.now())}: Running Simulation {sim} of {n_simulations}...")
+# =============================================================================
             for day in range(n_days):
                 # Get date for current day
                 
                 # Extract day of month directly from datetime64
-                day_of_month = simulation_events.day.values[day].astype('datetime64[D]').astype(int) % 31 + 1
-
+                day_of_month = simulation_events.day.values[day].astype('datetime64[D]').item().day
+                
                 # Add monthly premium on first day of each month
                 if day_of_month == 1:
                     premium_daily_costs[sim, day] = monthly_premium
