@@ -205,22 +205,35 @@ class HealthSimulation:
     This class handles only the occurrence of events, not their financial implications.
     """
     
-    def __init__(self, excel_path: str, n_family_members: int = 3):
+    def __init__(self, excel_path: str):
         """
         Initialize simulation from Excel file.
+        Reads individualized family member information and event probabilities.
         
         Args:
             excel_path: Path to Excel file containing simulation parameters
-            n_family_members: Number of family members to simulate (default: 3)
         """
-        self.n_family_members = n_family_members
-        
-        # Create family member labels (A, B, C, etc.)
-        self.family_members = [f"Family Member {chr(65+i)}" 
-                             for i in range(n_family_members)]
-        
         # Read the Excel file
         self.raw_data = pd.read_excel(excel_path)
+        
+        # Extract family members from column headers starting at Column C (index 2)
+        self.family_members = []
+        current_col = 2  # Start at column C
+        
+        while current_col < self.raw_data.shape[1]:  # While we haven't run out of columns
+            header = self.raw_data.columns[current_col]
+            print(f"Column {current_col} header: '{header}'")  # Let's see what we're working with
+            print(f"{header.startswith('Unnamed')}")
+            if pd.isna(header) or (isinstance(header, str) and (header == '' or header.startswith('Unnamed'))):
+                break
+            # Extract name from format: 'Member "Name" Average'
+            member_name = header.split('"')[1]  # Get text between quotes
+            self.family_members.append(member_name)
+            current_col += 1
+        
+        # Get tax rate from specified cell
+        tax_section = self.raw_data[self.raw_data.iloc[:, 0] == "Marginal Tax Rate"].index[0]
+        self.tax_rate = self.raw_data.iloc[tax_section, 1]
         
         # Extract core simulation data (events and their probabilities)
         self.events_df = self._extract_events()
@@ -230,68 +243,414 @@ class HealthSimulation:
         
         # The simulation dataset will store only event occurrences
         self.sim_data = None
-        
+    
     def _extract_events(self) -> pd.DataFrame:
         """
-        Extract event information from Excel file.
-        Only extracts event names and occurrence probabilities.
+        Extract event information and individual-specific frequencies from Excel file.
         
         Returns:
-            DataFrame containing event details, including daily probabilities
+            DataFrame containing event details and per-member probabilities
         """
-        # Find where events data ends (look for first empty row)
+        # Find where events data ends
         events_end = self.raw_data[self.raw_data.iloc[:, 0].isna()].index[0]
         
-        # Extract only event names, base costs, and probabilities
-        events_df = self.raw_data.iloc[:events_end, :3].copy()
-        events_df.columns = ['event', 'raw_cost', 'mean_yearly_occurrences']
+        # Create initial DataFrame with events and costs
+        events_df = self.raw_data.iloc[:events_end].copy()
         
-        # Clean up and calculate daily probabilities
-        events_df = events_df.dropna()
-        events_df['daily_prob'] = events_df['mean_yearly_occurrences'] / 365.0 / self.n_family_members
+        # Keep only rows with event names
+        events_df = events_df.dropna(subset=['Issue'])
+        
+        # Rename basic columns
+        events_df = events_df.rename(columns={'Issue': 'event', 'Raw Cost': 'raw_cost'})
+        
+        # For each family member, get their column of frequencies and calculate daily probabilities
+        member_cols = {}  # Map member names to their column indices
+        for idx, col in enumerate(self.raw_data.columns[2:]):  # Start from Column C
+            if pd.isna(col) or (isinstance(col, str) and (col == '' or col.startswith('Unnamed'))):
+                break
+            print(f"{col}")
+            member_name = col.split('"')[1]
+            member_cols[member_name] = idx + 2  # +2 to adjust for 0-based indexing and starting at col C
+        # Calculate daily probabilities for each family member
+        for member in self.family_members:
+            member_col = member_cols[member]
+            # Store both annual and daily probabilities
+            events_df[f"{member}_annual"] = events_df.iloc[:, member_col]
+            events_df[f"{member}_daily_prob"] = events_df[f"{member}_annual"] / 365.0
         
         return events_df
-    
     def _extract_plans(self) -> Dict[str, PlanParameters]:
         """
-        Extract insurance plan parameters from Excel file.
-        Creates PlanParameters objects for each insurance plan option.
+        Extract insurance plan parameters from Excel file using dynamic boundary detection.
+        This method discovers the actual structure of the spreadsheet rather than making
+        assumptions about fixed column positions, making it robust to variations in 
+        family size and layout modifications.
         
         Returns:
             Dictionary mapping plan names to PlanParameters objects
         """
-        # Find parameter section (look for "Premium (Annual)" in column D)
-        premium_row = self.raw_data[self.raw_data.iloc[:, 3] == "Premium (Annual)"].index[0]
+        print("Starting dynamic plan extraction...")
+        
+        # Stage 1: Locate the premium row as our structural anchor point
+        print("Stage 1: Locating premium row...")
+        premium_row = None
+        for col in range(3, min(8, self.raw_data.shape[1])):  # Search columns D through G
+            matches = self.raw_data[self.raw_data.iloc[:, col] == "Premium (Annual)"].index
+            if len(matches) > 0:
+                premium_row = matches[0]
+                print(f"Found 'Premium (Annual)' at row {premium_row}, column {col}")
+                break
+        
+        if premium_row is None:
+            raise ValueError("Could not find 'Premium (Annual)' in expected columns D-G. Please check Excel file structure.")
+        
+        # Stage 2: Dynamically determine where family member columns end
+        print("Stage 2: Discovering family member data boundaries...")
+        family_member_end_col = 2  # Start after basic event data (columns A, B)
+        
+        for idx, col_header in enumerate(self.raw_data.columns[2:]):
+            actual_col_idx = 2 + idx  # Convert relative index to absolute column index
+            
+            print(f"  Analyzing column {actual_col_idx}: '{col_header}'")
+            
+            # Check for obvious end-of-data indicators
+            if pd.isna(col_header) or (isinstance(col_header, str) and (col_header == '' or col_header.startswith('Unnamed'))):
+                family_member_end_col = actual_col_idx
+                print(f"  Found end marker at column {actual_col_idx}")
+                break
+            
+            # Check for family member pattern (quoted names)
+            elif isinstance(col_header, str) and '"' in col_header:
+                print(f"  Identified as family member column: {col_header}")
+                continue
+            
+            # If we hit something that doesn't match family member pattern, that's our boundary
+            else:
+                family_member_end_col = actual_col_idx
+                print(f"  Non-family-member content found, boundary at column {actual_col_idx}")
+                break
+        
+        print(f"Family member data ends at column index: {family_member_end_col}")
+        
+        # Stage 3: Skip over intermediate non-plan columns (like label columns)
+        print("Stage 3: Identifying plan data start boundary...")
+        plan_start_col = family_member_end_col
+        
+        for col_idx in range(family_member_end_col, self.raw_data.shape[1]):
+            header = self.raw_data.columns[col_idx]
+            print(f"  Examining column {col_idx}: '{header}'")
+            
+            # Skip obviously non-plan columns based on header
+            if (pd.isna(header) or header == '' or 
+                (isinstance(header, str) and header.startswith('Unnamed'))):
+                print(f"    Skipping empty/unnamed column")
+                plan_start_col = col_idx + 1
+                continue
+            
+            # Check if this column contains descriptive labels rather than plan data
+            # by examining the premium row content
+            cell_value = self.raw_data.iloc[premium_row, col_idx]
+            print(f"    Premium row content: '{cell_value}' (type: {type(cell_value)})")
+            
+            # If this cell contains descriptive text (like "Premium (Annual)"), skip it
+            if isinstance(cell_value, str):
+                # Check if it's obviously descriptive text rather than a number
+                clean_value = str(cell_value).replace(',', '').replace('$', '').replace('.', '')
+                if not clean_value.isdigit():
+                    print(f"    Skipping label column containing: '{cell_value}'")
+                    plan_start_col = col_idx + 1
+                    continue
+            
+            # If we get here, this looks like it could be a plan column
+            print(f"    Column {col_idx} appears to contain plan data")
+            break
+        
+        print(f"Plan data starts at column index: {plan_start_col}")
+        
+        # Stage 4: Validate and collect legitimate plan columns
+        print("Stage 4: Validating plan columns...")
+        valid_plan_cols = []
+        
+        for col_idx in range(plan_start_col, self.raw_data.shape[1]):
+            header = self.raw_data.columns[col_idx]
+            print(f"  Validating column {col_idx}: '{header}'")
+            
+            # Skip columns with clearly non-plan headers
+            if (pd.isna(header) or header == '' or 
+                (isinstance(header, str) and header.startswith('Unnamed'))):
+                print(f"    Rejected: invalid header")
+                continue
+            
+            # Validate that this column contains numeric data in the premium row
+            premium_value = self.raw_data.iloc[premium_row, col_idx]
+            print(f"    Premium value: '{premium_value}' (type: {type(premium_value)})")
+            
+            # Attempt to convert premium to numeric to validate it's a real plan column
+            try:
+                numeric_premium = pd.to_numeric(premium_value, errors='coerce')
+                if pd.isna(numeric_premium):
+                    print(f"    Rejected: premium value '{premium_value}' is not numeric")
+                    continue
+                if numeric_premium <= 0:
+                    print(f"    Rejected: premium value {numeric_premium} is not positive")
+                    continue
+                    
+                print(f"    Accepted: valid plan column with premium ${numeric_premium:,.2f}")
+                valid_plan_cols.append(col_idx)
+                
+            except Exception as e:
+                print(f"    Rejected: error processing premium: {e}")
+                continue
+        
+        print(f"Final validated plan columns: {valid_plan_cols}")
+        
+        if not valid_plan_cols:
+            raise ValueError("No valid plan columns found. Check spreadsheet structure and data.")
+        
+        # Stage 5: Extract parameter data section
+        print("Stage 5: Extracting plan parameters...")
         param_data = self.raw_data.iloc[premium_row:premium_row+5].copy()
+        print(f"Parameter data shape: {param_data.shape}")
         
-        # Get plan columns (exclude empty columns and non-plan columns)
-        plan_cols = [col for col in range(4, self.raw_data.shape[1]) 
-                    if pd.notna(self.raw_data.iloc[premium_row, col])]
-        
+        # Stage 6: Create plan objects with enhanced error handling
+        print("Stage 6: Creating plan objects...")
         plans = {}
-        for col in plan_cols:
-            # Use column name as plan name (fixed from previous version)
-            plan_name = self.raw_data.columns[col]
-            
-            # Extract coverage rules for each event
-            event_coverage = {}
-            for idx, event in enumerate(self.events_df['event']):
-                coverage_value = self.raw_data.iloc[idx, col]
-                if pd.notna(coverage_value):
-                    event_coverage[event] = coverage_value
-            
-            # Create plan object with all parameters
-            plans[plan_name] = PlanParameters(
-                name=plan_name,
-                premium=param_data.iloc[0, col],
-                deductible_individual=param_data.iloc[1, col],
-                max_oop_individual=param_data.iloc[2, col],
-                deductible_family=param_data.iloc[3, col],
-                max_oop_family=param_data.iloc[4, col],
-                event_coverage=event_coverage
-            )
         
+        for col_idx in valid_plan_cols:
+            plan_name = self.raw_data.columns[col_idx]
+            print(f"\nProcessing plan: '{plan_name}' (column {col_idx})")
+            
+            try:
+                # Extract and validate premium with enhanced type safety
+                raw_premium = param_data.iloc[0, col_idx]
+                print(f"  Raw premium: '{raw_premium}' (type: {type(raw_premium)})")
+                
+                # Convert to numeric with detailed error handling
+                numeric_premium = pd.to_numeric(raw_premium, errors='coerce')
+                if pd.isna(numeric_premium):
+                    print(f"  ERROR: Could not convert premium '{raw_premium}' to number. Skipping plan.")
+                    continue
+                
+                print(f"  Numeric premium: ${numeric_premium:,.2f}")
+                
+                # Apply tax adjustment
+                effective_premium = numeric_premium * (1 - self.tax_rate)
+                print(f"  Tax-adjusted premium: ${effective_premium:,.2f} (tax rate: {self.tax_rate:.1%})")
+                
+                # Extract other plan parameters with validation
+                try:
+                    deductible_individual = pd.to_numeric(param_data.iloc[1, col_idx], errors='coerce')
+                    max_oop_individual = pd.to_numeric(param_data.iloc[2, col_idx], errors='coerce')
+                    deductible_family = pd.to_numeric(param_data.iloc[3, col_idx], errors='coerce')
+                    max_oop_family = pd.to_numeric(param_data.iloc[4, col_idx], errors='coerce')
+                    
+                    # Validate all parameters are numeric
+                    if any(pd.isna(val) for val in [deductible_individual, max_oop_individual, 
+                                                  deductible_family, max_oop_family]):
+                        print(f"  ERROR: Non-numeric values found in plan parameters. Skipping plan.")
+                        continue
+                        
+                    print(f"  Individual deductible: ${deductible_individual:,.2f}")
+                    print(f"  Individual OOP max: ${max_oop_individual:,.2f}")
+                    print(f"  Family deductible: ${deductible_family:,.2f}")
+                    print(f"  Family OOP max: ${max_oop_family:,.2f}")
+                    
+                except Exception as e:
+                    print(f"  ERROR extracting plan parameters: {e}. Skipping plan.")
+                    continue
+                
+                # Extract event coverage rules with validation
+                print("  Extracting event coverage rules...")
+                event_coverage = {}
+                events_end = self.raw_data[self.raw_data.iloc[:, 0].isna()].index[0]
+                
+                for row_idx in range(events_end):
+                    event_name = self.raw_data.iloc[row_idx, 0]
+                    coverage_value = self.raw_data.iloc[row_idx, col_idx]
+                    
+                    if pd.notna(event_name) and pd.notna(coverage_value):
+                        # Attempt to convert coverage value to numeric
+                        try:
+                            numeric_coverage = pd.to_numeric(coverage_value, errors='coerce')
+                            if not pd.isna(numeric_coverage):
+                                event_coverage[event_name] = numeric_coverage
+                                print(f"    {event_name}: {numeric_coverage}")
+                            else:
+                                print(f"    WARNING: Non-numeric coverage for {event_name}: {coverage_value}")
+                        except Exception as e:
+                            print(f"    WARNING: Error processing coverage for {event_name}: {e}")
+                
+                print(f"  Successfully extracted {len(event_coverage)} event coverage rules")
+                
+                # Create the plan object
+                plans[plan_name] = PlanParameters(
+                    name=plan_name,
+                    premium=effective_premium,
+                    deductible_individual=deductible_individual,
+                    max_oop_individual=max_oop_individual,
+                    deductible_family=deductible_family,
+                    max_oop_family=max_oop_family,
+                    event_coverage=event_coverage
+                )
+                
+                print(f"  ✓ Successfully created plan: {plan_name}")
+                
+            except Exception as e:
+                print(f"  ERROR creating plan {plan_name}: {e}")
+                continue
+        
+        print(f"\nPlan extraction complete. Created {len(plans)} plans: {list(plans.keys())}")
         return plans
+# =============================================================================
+#     def _extract_plans(self) -> Dict[str, PlanParameters]:
+#         """
+#         Extract insurance plan parameters from Excel file.
+#         Includes tax adjustment for premiums.
+#         
+#         Returns:
+#             Dictionary mapping plan names to PlanParameters objects
+#         """
+# # =============================================================================
+# #         # Find premium row which starts the plan parameters section
+# #         premium_row = self.raw_data[self.raw_data.iloc[:, 3] == "Premium (Annual)"].index[0]
+# # =============================================================================
+#         # Search for "Premium (Annual)" across multiple potential columns
+#         premium_row = None
+#         for col in range(3, min(8, self.raw_data.shape[1])):  # Search columns D through G
+#             matches = self.raw_data[self.raw_data.iloc[:, col] == "Premium (Annual)"].index
+#             if len(matches) > 0:
+#                 premium_row = matches[0]
+#                 break
+#         
+#         if premium_row is None:
+#             raise ValueError("Could not find 'Premium (Annual)' in expected columns. Please check Excel file structure.")
+#         param_data = self.raw_data.iloc[premium_row:premium_row+5].copy()
+#         
+#         # Get plan columns (exclude empty columns and non-plan columns)
+#         plan_cols = [col for col in range(4, self.raw_data.shape[1]) 
+#                     if pd.notna(self.raw_data.iloc[premium_row, col])]
+#         
+#         plans = {}
+#         
+#         for col in plan_cols:
+#             plan_name = self.raw_data.columns[col]
+#             
+#             # Extract coverage rules for each event
+#             events_end = self.raw_data[self.raw_data.iloc[:, 0].isna()].index[0]
+#             event_coverage = {}
+#             for idx in range(events_end):
+#                 event = self.raw_data.iloc[idx, 0]
+#                 coverage_value = self.raw_data.iloc[idx, col]
+#                 if pd.notna(event) and pd.notna(coverage_value):
+#                     event_coverage[event] = coverage_value
+#             
+#             # Adjust premium for tax advantage
+#             raw_premium = param_data.iloc[0, col]
+#             print("Plan: "+plan_name+". raw_premium: "+raw_premium)
+#             effective_premium = raw_premium * (1 - self.tax_rate)
+#             
+#             # Create plan object with adjusted premium
+#             plans[plan_name] = PlanParameters(
+#                 name=plan_name,
+#                 premium=effective_premium,  # Using tax-adjusted premium
+#                 deductible_individual=param_data.iloc[1, col],
+#                 max_oop_individual=param_data.iloc[2, col],
+#                 deductible_family=param_data.iloc[3, col],
+#                 max_oop_family=param_data.iloc[4, col],
+#                 event_coverage=event_coverage
+#             )
+#         
+#         return plans
+# =============================================================================
+# =============================================================================
+#     def __init__(self, excel_path: str, n_family_members: int = 3):
+#         """
+#         Initialize simulation from Excel file.
+#         
+#         Args:
+#             excel_path: Path to Excel file containing simulation parameters
+#             n_family_members: Number of family members to simulate (default: 3)
+#         """
+#         self.n_family_members = n_family_members
+#         
+#         # Create family member labels (A, B, C, etc.)
+#         self.family_members = [f"Family Member {chr(65+i)}" 
+#                              for i in range(n_family_members)]
+#         
+#         # Read the Excel file
+#         self.raw_data = pd.read_excel(excel_path)
+#         
+#         # Extract core simulation data (events and their probabilities)
+#         self.events_df = self._extract_events()
+#         
+#         # Extract plan information (stored separately from simulation)
+#         self.plans = self._extract_plans()
+#         
+#         # The simulation dataset will store only event occurrences
+#         self.sim_data = None
+#         
+#     def _extract_events(self) -> pd.DataFrame:
+#         """
+#         Extract event information from Excel file.
+#         Only extracts event names and occurrence probabilities.
+#         
+#         Returns:
+#             DataFrame containing event details, including daily probabilities
+#         """
+#         # Find where events data ends (look for first empty row)
+#         events_end = self.raw_data[self.raw_data.iloc[:, 0].isna()].index[0]
+#         
+#         # Extract only event names, base costs, and probabilities
+#         events_df = self.raw_data.iloc[:events_end, :3].copy()
+#         events_df.columns = ['event', 'raw_cost', 'mean_yearly_occurrences']
+#         
+#         # Clean up and calculate daily probabilities
+#         events_df = events_df.dropna()
+#         events_df['daily_prob'] = events_df['mean_yearly_occurrences'] / 365.0 / self.n_family_members
+#         
+#         return events_df
+#     
+#     def _extract_plans(self) -> Dict[str, PlanParameters]:
+#         """
+#         Extract insurance plan parameters from Excel file.
+#         Creates PlanParameters objects for each insurance plan option.
+#         
+#         Returns:
+#             Dictionary mapping plan names to PlanParameters objects
+#         """
+#         # Find parameter section (look for "Premium (Annual)" in column D)
+#         premium_row = self.raw_data[self.raw_data.iloc[:, 3] == "Premium (Annual)"].index[0]
+#         param_data = self.raw_data.iloc[premium_row:premium_row+5].copy()
+#         
+#         # Get plan columns (exclude empty columns and non-plan columns)
+#         plan_cols = [col for col in range(4, self.raw_data.shape[1]) 
+#                     if pd.notna(self.raw_data.iloc[premium_row, col])]
+#         
+#         plans = {}
+#         for col in plan_cols:
+#             # Use column name as plan name (fixed from previous version)
+#             plan_name = self.raw_data.columns[col]
+#             
+#             # Extract coverage rules for each event
+#             event_coverage = {}
+#             for idx, event in enumerate(self.events_df['event']):
+#                 coverage_value = self.raw_data.iloc[idx, col]
+#                 if pd.notna(coverage_value):
+#                     event_coverage[event] = coverage_value
+#             
+#             # Create plan object with all parameters
+#             plans[plan_name] = PlanParameters(
+#                 name=plan_name,
+#                 premium=param_data.iloc[0, col],
+#                 deductible_individual=param_data.iloc[1, col],
+#                 max_oop_individual=param_data.iloc[2, col],
+#                 deductible_family=param_data.iloc[3, col],
+#                 max_oop_family=param_data.iloc[4, col],
+#                 event_coverage=event_coverage
+#             )
+#         
+#         return plans
+# =============================================================================
     
     def initialize_simulation(self, n_simulations: int, year: Optional[int] = None):
         """
@@ -529,7 +888,7 @@ class HealthSimulation:
             print(f"  Mean:     ${yearly_totals.mean():,.2f}")
             print(f"  Std Dev:  ${yearly_totals.std():,.2f}")
 
-    def plot_distributions(self, plan_name: Optional[str] = None) -> None:
+    def plot_distributions(self, plan_name: Optional[str] = None, ylim=0.03) -> None:
         """
         Plot histograms and cumulative distributions of yearly total costs.
         
@@ -550,7 +909,7 @@ class HealthSimulation:
             std = yearly_totals.std()
             
             # Plot histogram
-            ax1.hist(yearly_totals, bins=30, alpha=0.3, color=color, 
+            ax1.hist(yearly_totals, bins=15, alpha=0.6, color=color, 
                     density=True, label=f"{plan}\nμ=${mean:,.0f}, σ^2=${std:,.0f}")
             
             # Plot cumulative distribution
@@ -563,6 +922,7 @@ class HealthSimulation:
         ax1.set_ylabel("Density")
         ax1.legend()
         ax1.grid(True, alpha=0.3)
+        ax1.set_ylim(0,ylim)
         
         # Customize CDF subplot
         ax2.set_title("Cumulative Distribution of Yearly Total Costs")
@@ -573,6 +933,56 @@ class HealthSimulation:
         
         plt.tight_layout()
         plt.show()
+
+# =============================================================================
+#     def plot_distributions(self, plan_name: Optional[str] = None) -> None:
+#         """
+#         Create separate plots for histogram and cumulative distributions of yearly total costs.
+#         
+#         Args:
+#             plan_name: Optional specific plan to analyze. If None, plots all plans.
+#         """
+#         plans_to_analyze = [plan_name] if plan_name else list(self.plans.keys())
+#         
+#         # Color cycle for consistent plan colors across both plots
+#         colors = plt.cm.tab10(np.linspace(0, 1, len(plans_to_analyze)))
+#         
+#         # First plot: Histogram
+#         plt.figure(figsize=(10, 6))
+#         for plan, color in zip(plans_to_analyze, colors):
+#             yearly_totals = self.get_yearly_totals(plan)
+#             mean = yearly_totals.mean()
+#             std = yearly_totals.std()
+#             
+#             plt.hist(yearly_totals, bins=20, alpha=0.7, color=color, 
+#                     density=True, label=f"{plan}\nμ=${mean:,.0f}, σ=${std:,.0f}")
+#         
+#         plt.title("Distribution of Yearly Total Costs")
+#         plt.xlabel("Total Cost ($)")
+#         plt.ylabel("Density")
+#         plt.legend()
+#         plt.grid(True, alpha=0.3)
+#         plt.set_ylim()
+#         
+#         plt.tight_layout()
+#         plt.show()
+#         
+#         # Second plot: Cumulative Distribution
+#         plt.figure(figsize=(10, 6))
+#         for plan, color in zip(plans_to_analyze, colors):
+#             yearly_totals = self.get_yearly_totals(plan)
+#             
+#             plt.hist(yearly_totals, bins=20, density=True, cumulative=True,
+#                     histtype='stepfilled', color=color, alpha=0.5, label=plan)
+#         
+#         plt.title("Cumulative Distribution of Yearly Total Costs")
+#         plt.xlabel("Total Cost ($)")
+#         plt.ylabel("Cumulative Probability")
+#         plt.legend()
+#         plt.grid(True, alpha=0.3)
+#         plt.tight_layout()
+#         plt.show()
+# =============================================================================
 
     def analyze_lowest_cost(self, plot: bool = True) -> None:
         """
@@ -629,4 +1039,7 @@ if __name__ == "__main__":
     test = HealthSimulation(filename)
     test.initialize_simulation(50,2025)
     test.run_simulation()
-    print("Loaded.")
+    test.run_cost_analysis()
+    test.plot_distributions()
+    
+    # print("Loaded.")
