@@ -231,6 +231,8 @@ class HealthSimulation:
             self.family_members.append(member_name)
             current_col += 1
         
+        self.n_family_members = len(self.family_members)
+        
         # Get tax rate from specified cell
         tax_section = self.raw_data[self.raw_data.iloc[:, 0] == "Marginal Tax Rate"].index[0]
         self.tax_rate = self.raw_data.iloc[tax_section, 1]
@@ -689,11 +691,12 @@ class HealthSimulation:
         self.sim_data = xr.Dataset({
             'occurrences': occurrences
         })
-    
     def run_simulation(self, seed: Optional[int] = None):
         """
-        Run the Monte Carlo simulation of event occurrences.
-        Generates random events for each family member, day, and simulation run.
+        Run the Monte Carlo simulation of event occurrences using individualized
+        family member probability profiles. This modernized implementation works
+        directly with member-specific risk data rather than aggregated probabilities,
+        providing more accurate modeling of healthcare event patterns.
         
         Args:
             seed: Random seed for reproducibility
@@ -704,30 +707,152 @@ class HealthSimulation:
         # Set random seed if provided for reproducibility
         if seed is not None:
             np.random.seed(seed)
+        
+        print("Starting individualized family member simulation...")
+        print(f"Family members: {self.family_members}")
+        
+        # Extract individualized probability data for each family member
+        print("Extracting individual family member probabilities...")
+        
+        # Create probability matrix: events × family_members
+        events = list(self.events_df['event'])
+        n_events = len(events)
+        n_family_members = self.n_family_members
+        
+        # Initialize probability matrix
+        individual_probabilities = np.zeros((n_events, n_family_members))
+        
+        # Extract probability data for each family member
+        events_indexed = self.events_df.set_index('event')
+        
+        for member_idx, member_name in enumerate(self.family_members):
+            prob_column = f"{member_name}_daily_prob"
             
-        # Get daily probabilities for each event
-        daily_probs = self.events_df.set_index('event')['daily_prob']
+            if prob_column not in events_indexed.columns:
+                raise ValueError(f"Could not find probability column '{prob_column}' for family member '{member_name}'. "
+                               f"Available columns: {list(events_indexed.columns)}")
+            
+            member_probabilities = events_indexed[prob_column].values
+            individual_probabilities[:, member_idx] = member_probabilities
+            
+            print(f"Loaded probabilities for {member_name}: {len(member_probabilities)} events")
+            print(f"  Sample probabilities: {member_probabilities[:3]}")
         
-        # Reshape probabilities to match our dimensions:
-        # (events, 1, 1, 1) -> will broadcast to (events, days, family_members, simulations)
-        prob_array = daily_probs.values.reshape(-1, 1, 1, 1)
+        print(f"Individual probability matrix shape: {individual_probabilities.shape}")
         
-        # Get the sizes we need from our xarray structure
+        # Get simulation dimensions from xarray structure
         n_days = self.sim_data.sizes['day']
-        n_family_members = self.sim_data.sizes['family_member']
         n_simulations = self.sim_data.sizes['simulation']
         
-        # Broadcast to full size and transpose to match our xarray dimensions
-        prob_array = np.broadcast_to(
-            prob_array,
-            (daily_probs.shape[0], n_days, n_family_members, n_simulations)
-        ).transpose(1, 0, 2, 3)  # reorder to (days, events, family_members, simulations)
+        print(f"Simulation dimensions: {n_days} days, {n_family_members} family members, {n_simulations} simulations")
+        
+        # Reshape probability matrix to broadcast correctly across simulation dimensions
+        # Target shape: (days, events, family_members, simulations)
+        # Start with: (events, family_members)
+        # Add singleton dimensions for days and simulations, then broadcast
+        
+        print("Preparing probability arrays for simulation...")
+        
+        # Reshape to (1, events, family_members, 1) for broadcasting
+        prob_array_base = individual_probabilities.reshape(1, n_events, n_family_members, 1)
+        
+        # Broadcast to full simulation dimensions: (days, events, family_members, simulations)
+        prob_array_full = np.broadcast_to(
+            prob_array_base,
+            (n_days, n_events, n_family_members, n_simulations)
+        )
+        
+        print(f"Broadcasted probability array shape: {prob_array_full.shape}")
         
         # Generate random numbers for the full 4D structure
+        print("Generating random numbers for event determination...")
         random_values = np.random.random(self.sim_data.occurrences.shape)
+        print(f"Random values array shape: {random_values.shape}")
         
-        # Determine which events occur (where random value < probability)
-        self.sim_data['occurrences'].values = random_values < prob_array
+        # Verify that array shapes are compatible
+        if prob_array_full.shape != random_values.shape:
+            raise ValueError(f"Shape mismatch: probability array {prob_array_full.shape} "
+                            f"vs random array {random_values.shape}")
+        
+        # Determine which events occur by comparing random values to individual probabilities
+        print("Determining event occurrences based on individual probabilities...")
+        
+        # Events occur where random value < individual probability for that family member
+        event_occurrences = random_values < prob_array_full
+        
+        # Store results in the xarray structure
+        # Note: xarray dimensions are (day, event, family_member, simulation)
+        # Our numpy array dimensions are (day, event, family_member, simulation)
+        # So they align correctly for direct assignment
+        
+        self.sim_data['occurrences'].values = event_occurrences
+        
+        # Validate results by checking event generation rates
+        print("\nValidating simulation results...")
+        
+        for member_idx, member_name in enumerate(self.family_members):
+            member_events = event_occurrences[:, :, member_idx, :].sum(axis=(0, 2))  # Sum across days and simulations
+            total_possible = n_days * n_simulations
+            
+            print(f"\n{member_name} event summary:")
+            for event_idx, event_name in enumerate(events[:5]):  # Show first 5 events
+                event_count = event_occurrences[:, event_idx, member_idx, :].sum()
+                expected_count = individual_probabilities[event_idx, member_idx] * total_possible
+                actual_rate = event_count / total_possible
+                expected_rate = individual_probabilities[event_idx, member_idx]
+                
+                print(f"  {event_name}: {event_count}/{total_possible} events "
+                      f"(rate: {actual_rate:.6f}, expected: {expected_rate:.6f})")
+        
+        # Summary statistics
+        total_events_per_simulation = event_occurrences.sum(axis=(0, 1, 2))  # Sum across days, events, family_members
+        print(f"\nOverall simulation summary:")
+        print(f"  Total events per simulation - Mean: {total_events_per_simulation.mean():.1f}, "
+              f"Std: {total_events_per_simulation.std():.1f}")
+        print(f"  Min events in a simulation: {total_events_per_simulation.min()}")
+        print(f"  Max events in a simulation: {total_events_per_simulation.max()}")
+        
+        print("Individualized family member simulation complete!")
+# =============================================================================
+#     def run_simulation(self, seed: Optional[int] = None):
+#         """
+#         Run the Monte Carlo simulation of event occurrences.
+#         Generates random events for each family member, day, and simulation run.
+#         
+#         Args:
+#             seed: Random seed for reproducibility
+#         """
+#         if self.sim_data is None:
+#             raise ValueError("Must call initialize_simulation before running simulation")
+#             
+#         # Set random seed if provided for reproducibility
+#         if seed is not None:
+#             np.random.seed(seed)
+#             
+#         # Get daily probabilities for each event
+#         daily_probs = self.events_df.set_index('event')['daily_prob']
+#         
+#         # Reshape probabilities to match our dimensions:
+#         # (events, 1, 1, 1) -> will broadcast to (events, days, family_members, simulations)
+#         prob_array = daily_probs.values.reshape(-1, 1, 1, 1)
+#         
+#         # Get the sizes we need from our xarray structure
+#         n_days = self.sim_data.sizes['day']
+#         n_family_members = self.sim_data.sizes['family_member']
+#         n_simulations = self.sim_data.sizes['simulation']
+#         
+#         # Broadcast to full size and transpose to match our xarray dimensions
+#         prob_array = np.broadcast_to(
+#             prob_array,
+#             (daily_probs.shape[0], n_days, n_family_members, n_simulations)
+#         ).transpose(1, 0, 2, 3)  # reorder to (days, events, family_members, simulations)
+#         
+#         # Generate random numbers for the full 4D structure
+#         random_values = np.random.random(self.sim_data.occurrences.shape)
+#         
+#         # Determine which events occur (where random value < probability)
+#         self.sim_data['occurrences'].values = random_values < prob_array
+# =============================================================================
     
     @property
     def raw_costs(self) -> pd.Series:
@@ -1037,7 +1162,7 @@ class HealthSimulation:
 if __name__ == "__main__":
     filename = 'Health_Monte_Carlo_Input.xlsx'
     test = HealthSimulation(filename)
-    test.initialize_simulation(50,2025)
+    test.initialize_simulation(500,2025)
     test.run_simulation()
     test.run_cost_analysis()
     test.plot_distributions()
