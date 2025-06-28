@@ -1160,11 +1160,33 @@ class HealthSimulation:
             plt.show()
 
 if __name__ == "__main__":
-    filename = 'Health_Monte_Carlo_Input.xlsx'
+# =============================================================================
+#     filename = 'Health_Monte_Carlo_Input.xlsx'
+#     test = HealthSimulation(filename)
+#     test.initialize_simulation(500,2025)
+#     test.run_simulation()
+#     test.run_cost_analysis()
+#     test.plot_distributions()
+# =============================================================================
+    
+# =============================================================================
+# #Debugging -- 0 events
+#     filename = 'Health_Monte_Carlo_Input_Zeros.xlsx'
+#     test = HealthSimulation(filename)
+#     test.initialize_simulation(1,2025)
+#     test.run_simulation()
+#     test.run_cost_analysis()
+#     test.plot_distributions()
+#     test.print_cost_summaries()
+#     # print("Loaded.")
+# =============================================================================
+
+#Testing -- single person with low events
+    filename = 'Health_Monte_Carlo_Input_IO_Check.xlsx'
     test = HealthSimulation(filename)
-    test.initialize_simulation(500,2025)
+    test.initialize_simulation(1,2025)
     test.run_simulation()
     test.run_cost_analysis()
     test.plot_distributions()
-    
+    test.print_cost_summaries()
     # print("Loaded.")
