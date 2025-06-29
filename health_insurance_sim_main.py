@@ -34,14 +34,15 @@ class PlanParameters:
     max_oop_family: float
     event_coverage: Dict[str, float]
     cost_results = None
-    
+
     def calculate_costs(self, 
                          simulation_events: xr.Dataset,
                          raw_costs: pd.Series) -> xr.Dataset:
         """
         Calculate costs for all events in a simulation under this plan's rules.
-        Handles both copays and coinsurance with appropriate deductible/OOP tracking.
-        Adds monthly premiums on the first day of each month.
+        Implements proportional threshold decomposition for accurate deductible 
+        and out-of-pocket calculations. Handles both copays and coinsurance with 
+        proper threshold crossing logic for individual medical events.
         
         Args:
             simulation_events: xarray Dataset containing event occurrences
@@ -64,121 +65,152 @@ class PlanParameters:
         
         # Initialize cost tracking arrays
         medical_daily_costs = np.zeros((n_simulations, n_members, n_days))
-        premium_daily_costs = np.zeros((n_simulations, n_days))  # Premium tracked separately
+        premium_daily_costs = np.zeros((n_simulations, n_days))
         
         # Calculate monthly premium (annual premium divided by 12)
         monthly_premium = self.premium / 12
         
         # Process each simulation separately
         for sim in range(n_simulations):
-# =============================================================================
-#             if sim % 10 == 0: #Not printed using joblig parallelization
-#                 print(f"{str(datetime.now())}: Running Simulation {sim} of {n_simulations}...")
-# =============================================================================
             for day in range(n_days):
-                # Get date for current day
-                
-                # Extract day of month directly from datetime64
+                # Extract day of month for premium calculation
                 day_of_month = simulation_events.day.values[day].astype('datetime64[D]').item().day
                 
                 # Add monthly premium on first day of each month
                 if day_of_month == 1:
                     premium_daily_costs[sim, day] = monthly_premium
                 
-                # Get previous day's totals (use zeros if it's day 0)
+                # Get previous day's accumulation totals
                 prev_fam_deductible = family_deductible_met[sim, day-1] if day > 0 else 0
                 prev_fam_oop = family_oop[sim, day-1] if day > 0 else 0
                 
-                # Track new deductible and OOP amounts for this day across all family members
+                # Track daily family-level increments
                 daily_family_deductible = 0
                 daily_family_oop = 0
                 
-                # Process each family member
+                # Process each family member for this day
                 for member in range(n_members):
                     # Get previous day's individual totals
                     prev_ind_deductible = individual_deductible_met[sim, member, day-1] if day > 0 else 0
                     prev_ind_oop = individual_oop[sim, member, day-1] if day > 0 else 0
                     
-                    daily_member_cost = 0  # Track costs for this member this day
-                    daily_member_deductible = 0  # Track amount toward deductible
-                    daily_member_oop = 0  # Track amount toward OOP
+                    # Track daily member-level totals
+                    daily_member_cost = 0
+                    daily_member_deductible = 0
+                    daily_member_oop = 0
                     
-                    # Check each possible event for this day/member/simulation
+                    # Process each potential event for this member on this day
                     for event in simulation_events.event.values:
                         if simulation_events.occurrences.isel(
                             simulation=sim, day=day, family_member=member
                         ).sel(event=event).item():
-                            # Event occurred! Calculate cost
+                            
+                            # Event occurred - get base cost and coverage parameters
                             base_cost = raw_costs[event]
                             coverage = self.event_coverage[event]
                             
-                            # Determine if deductible is met (either individual or family)
-                            deductible_met = (prev_ind_deductible >= self.deductible_individual or 
-                                            prev_fam_deductible >= self.deductible_family)
+                            # Calculate remaining deductible amounts
+                            remaining_ind_deductible = max(0, self.deductible_individual - prev_ind_deductible)
+                            remaining_fam_deductible = max(0, self.deductible_family - prev_fam_deductible)
                             
-                            # Calculate cost based on coverage type
+                            # Determine if either deductible threshold is already satisfied
+                            individual_deductible_satisfied = prev_ind_deductible >= self.deductible_individual
+                            family_deductible_satisfied = prev_fam_deductible >= self.deductible_family
+                            deductible_met = individual_deductible_satisfied or family_deductible_satisfied
+                            
+                            # Handle copay events (fixed cost regardless of deductible status)
                             if coverage > 1:  # This is a copay
                                 event_cost = coverage
-                                # Copays count toward OOP but NOT deductible
-                                deductible_amount = 0
+                                deductible_amount = 0  # Copays don't count toward deductible
                                 oop_amount = coverage
+                            
+                            # Handle coinsurance events (require deductible threshold analysis)
                             else:  # This is coinsurance
                                 if deductible_met:
+                                    # Deductible already satisfied - apply coinsurance to full amount
                                     event_cost = base_cost * coverage
-                                    deductible_amount = 0  # Deductible already met
-                                    oop_amount = event_cost  # Only pay coinsurance amount
+                                    deductible_amount = 0
+                                    oop_amount = event_cost
                                 else:
-                                    event_cost = base_cost
-                                    deductible_amount = base_cost  # Full amount toward deductible
-                                    oop_amount = base_cost  # Full amount toward OOP
+                                    # Deductible not yet satisfied - check for threshold crossing
+                                    # Determine the controlling deductible limit (individual vs family)
+                                    controlling_remaining_deductible = min(remaining_ind_deductible, remaining_fam_deductible)
                                     
-                            # Check if adding this cost would exceed OOP maximums
-                            # Individual OOP check
-                            remaining_ind_oop = self.max_oop_individual - prev_ind_oop
-                            if oop_amount > remaining_ind_oop:
-                                oop_amount = remaining_ind_oop
-                                event_cost = remaining_ind_oop
-                                
-                            # Family OOP check
-                            remaining_fam_oop = self.max_oop_family - prev_fam_oop
-                            if oop_amount > remaining_fam_oop:
-                                oop_amount = remaining_fam_oop
-                                event_cost = remaining_fam_oop
+                                    if base_cost <= controlling_remaining_deductible:
+                                        # Event doesn't cross deductible threshold - full amount at 100% patient responsibility
+                                        event_cost = base_cost
+                                        deductible_amount = base_cost
+                                        oop_amount = base_cost
+                                    else:
+                                        # Event crosses deductible threshold - decompose into components
+                                        # Pre-deductible component (paid at 100%)
+                                        pre_deductible_amount = controlling_remaining_deductible
+                                        pre_deductible_cost = pre_deductible_amount
+                                        
+                                        # Post-deductible component (paid at coinsurance rate)
+                                        post_deductible_amount = base_cost - controlling_remaining_deductible
+                                        post_deductible_cost = post_deductible_amount * coverage
+                                        
+                                        # Combine components for total event cost
+                                        event_cost = pre_deductible_cost + post_deductible_cost
+                                        deductible_amount = pre_deductible_amount  # Only pre-deductible portion counts
+                                        oop_amount = event_cost  # Both portions count toward OOP
                             
-                            # Add to daily totals for this member
+                            # Apply out-of-pocket maximum protections
+                            # Individual OOP maximum check
+                            remaining_ind_oop = max(0, self.max_oop_individual - prev_ind_oop)
+                            if oop_amount > remaining_ind_oop:
+                                # OOP amount exceeds individual limit - cap at remaining amount
+                                excess_over_ind_oop = oop_amount - remaining_ind_oop
+                                oop_amount = remaining_ind_oop
+                                event_cost = max(0, event_cost - excess_over_ind_oop)
+                            
+                            # Family OOP maximum check
+                            remaining_fam_oop = max(0, self.max_oop_family - prev_fam_oop)
+                            if oop_amount > remaining_fam_oop:
+                                # OOP amount exceeds family limit - cap at remaining amount
+                                excess_over_fam_oop = oop_amount - remaining_fam_oop
+                                oop_amount = remaining_fam_oop
+                                event_cost = max(0, event_cost - excess_over_fam_oop)
+                            
+                            # Accumulate daily totals for this member
                             daily_member_cost += event_cost
                             daily_member_deductible += deductible_amount
                             daily_member_oop += oop_amount
+                            
+                            # Update running individual totals for subsequent events this day
+                            prev_ind_deductible += deductible_amount
+                            prev_ind_oop += oop_amount
                     
-                    # Update individual totals for this day
+                    # Update daily tracking arrays for this member
                     individual_deductible_met[sim, member, day] = min(
                         self.deductible_individual,
-                        prev_ind_deductible + daily_member_deductible
+                        (individual_deductible_met[sim, member, day-1] if day > 0 else 0) + daily_member_deductible
                     )
                     
                     individual_oop[sim, member, day] = min(
                         self.max_oop_individual,
-                        prev_ind_oop + daily_member_oop
+                        (individual_oop[sim, member, day-1] if day > 0 else 0) + daily_member_oop
                     )
-                    
+
                     medical_daily_costs[sim, member, day] = daily_member_cost
                     
-                    # Add to family totals for this day
-                    daily_family_deductible += daily_member_deductible
+                    # Accumulate family-level daily totals
+                    # daily_family_deductible += daily_member_deductible
+                    daily_family_deductible += daily_member_oop
                     daily_family_oop += daily_member_oop
                 
-                # Update family totals for this day
+                # Update daily family-level tracking arrays
                 family_deductible_met[sim, day] = min(
                     self.deductible_family,
                     prev_fam_deductible + daily_family_deductible
                 )
-                
                 family_oop[sim, day] = min(
                     self.max_oop_family,
                     prev_fam_oop + daily_family_oop
                 )
         
-        # Convert our numpy arrays to xarray Dataset
+        # Convert numpy arrays to xarray Dataset with proper coordinate mapping
         result = xr.Dataset(
             data_vars={
                 'medical_daily_costs': (('simulation', 'family_member', 'day'), medical_daily_costs),
@@ -195,7 +227,8 @@ class PlanParameters:
                 'simulation': simulation_events.simulation
             }
         )
-        self.cost_results = result  # Store in instance
+        
+        self.cost_results = result
         return result
 
 class HealthSimulation:
@@ -1181,12 +1214,25 @@ if __name__ == "__main__":
 #     # print("Loaded.")
 # =============================================================================
 
+# =============================================================================
+# #Testing -- single person with low events
+#     filename = 'Health_Monte_Carlo_Input_IO_Check.xlsx'
+#     test = HealthSimulation(filename)
+#     test.initialize_simulation(1,2025)
+#     test.run_simulation()
+#     test.run_cost_analysis()
+#     test.plot_distributions()
+#     test.print_cost_summaries()
+#     # print("Loaded.")
+# =============================================================================
 #Testing -- single person with low events
-    filename = 'Health_Monte_Carlo_Input_IO_Check.xlsx'
-    test = HealthSimulation(filename)
-    test.initialize_simulation(1,2025)
-    test.run_simulation()
-    test.run_cost_analysis()
-    test.plot_distributions()
-    test.print_cost_summaries()
+    from Sim_Manipulator import *
+    filename = 'Health_Monte_Carlo_Input_ValidationThreePerson.xlsx'
+    base = HealthSimulation(filename)
+    base.initialize_simulation(1)
+    base.run_simulation()
+    base.run_cost_analysis()
+    base.print_cost_summaries()
+    controlled = create_validation_scenario(base)
     # print("Loaded.")
+
