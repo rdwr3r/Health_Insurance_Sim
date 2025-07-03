@@ -536,156 +536,6 @@ class HealthSimulation:
         
         print(f"\nPlan extraction complete. Created {len(plans)} plans: {list(plans.keys())}")
         return plans
-# =============================================================================
-#     def _extract_plans(self) -> Dict[str, PlanParameters]:
-#         """
-#         Extract insurance plan parameters from Excel file.
-#         Includes tax adjustment for premiums.
-#         
-#         Returns:
-#             Dictionary mapping plan names to PlanParameters objects
-#         """
-# # =============================================================================
-# #         # Find premium row which starts the plan parameters section
-# #         premium_row = self.raw_data[self.raw_data.iloc[:, 3] == "Premium (Annual)"].index[0]
-# # =============================================================================
-#         # Search for "Premium (Annual)" across multiple potential columns
-#         premium_row = None
-#         for col in range(3, min(8, self.raw_data.shape[1])):  # Search columns D through G
-#             matches = self.raw_data[self.raw_data.iloc[:, col] == "Premium (Annual)"].index
-#             if len(matches) > 0:
-#                 premium_row = matches[0]
-#                 break
-#         
-#         if premium_row is None:
-#             raise ValueError("Could not find 'Premium (Annual)' in expected columns. Please check Excel file structure.")
-#         param_data = self.raw_data.iloc[premium_row:premium_row+5].copy()
-#         
-#         # Get plan columns (exclude empty columns and non-plan columns)
-#         plan_cols = [col for col in range(4, self.raw_data.shape[1]) 
-#                     if pd.notna(self.raw_data.iloc[premium_row, col])]
-#         
-#         plans = {}
-#         
-#         for col in plan_cols:
-#             plan_name = self.raw_data.columns[col]
-#             
-#             # Extract coverage rules for each event
-#             events_end = self.raw_data[self.raw_data.iloc[:, 0].isna()].index[0]
-#             event_coverage = {}
-#             for idx in range(events_end):
-#                 event = self.raw_data.iloc[idx, 0]
-#                 coverage_value = self.raw_data.iloc[idx, col]
-#                 if pd.notna(event) and pd.notna(coverage_value):
-#                     event_coverage[event] = coverage_value
-#             
-#             # Adjust premium for tax advantage
-#             raw_premium = param_data.iloc[0, col]
-#             print("Plan: "+plan_name+". raw_premium: "+raw_premium)
-#             effective_premium = raw_premium * (1 - self.tax_rate)
-#             
-#             # Create plan object with adjusted premium
-#             plans[plan_name] = PlanParameters(
-#                 name=plan_name,
-#                 premium=effective_premium,  # Using tax-adjusted premium
-#                 deductible_individual=param_data.iloc[1, col],
-#                 max_oop_individual=param_data.iloc[2, col],
-#                 deductible_family=param_data.iloc[3, col],
-#                 max_oop_family=param_data.iloc[4, col],
-#                 event_coverage=event_coverage
-#             )
-#         
-#         return plans
-# =============================================================================
-# =============================================================================
-#     def __init__(self, excel_path: str, n_family_members: int = 3):
-#         """
-#         Initialize simulation from Excel file.
-#         
-#         Args:
-#             excel_path: Path to Excel file containing simulation parameters
-#             n_family_members: Number of family members to simulate (default: 3)
-#         """
-#         self.n_family_members = n_family_members
-#         
-#         # Create family member labels (A, B, C, etc.)
-#         self.family_members = [f"Family Member {chr(65+i)}" 
-#                              for i in range(n_family_members)]
-#         
-#         # Read the Excel file
-#         self.raw_data = pd.read_excel(excel_path)
-#         
-#         # Extract core simulation data (events and their probabilities)
-#         self.events_df = self._extract_events()
-#         
-#         # Extract plan information (stored separately from simulation)
-#         self.plans = self._extract_plans()
-#         
-#         # The simulation dataset will store only event occurrences
-#         self.sim_data = None
-#         
-#     def _extract_events(self) -> pd.DataFrame:
-#         """
-#         Extract event information from Excel file.
-#         Only extracts event names and occurrence probabilities.
-#         
-#         Returns:
-#             DataFrame containing event details, including daily probabilities
-#         """
-#         # Find where events data ends (look for first empty row)
-#         events_end = self.raw_data[self.raw_data.iloc[:, 0].isna()].index[0]
-#         
-#         # Extract only event names, base costs, and probabilities
-#         events_df = self.raw_data.iloc[:events_end, :3].copy()
-#         events_df.columns = ['event', 'raw_cost', 'mean_yearly_occurrences']
-#         
-#         # Clean up and calculate daily probabilities
-#         events_df = events_df.dropna()
-#         events_df['daily_prob'] = events_df['mean_yearly_occurrences'] / 365.0 / self.n_family_members
-#         
-#         return events_df
-#     
-#     def _extract_plans(self) -> Dict[str, PlanParameters]:
-#         """
-#         Extract insurance plan parameters from Excel file.
-#         Creates PlanParameters objects for each insurance plan option.
-#         
-#         Returns:
-#             Dictionary mapping plan names to PlanParameters objects
-#         """
-#         # Find parameter section (look for "Premium (Annual)" in column D)
-#         premium_row = self.raw_data[self.raw_data.iloc[:, 3] == "Premium (Annual)"].index[0]
-#         param_data = self.raw_data.iloc[premium_row:premium_row+5].copy()
-#         
-#         # Get plan columns (exclude empty columns and non-plan columns)
-#         plan_cols = [col for col in range(4, self.raw_data.shape[1]) 
-#                     if pd.notna(self.raw_data.iloc[premium_row, col])]
-#         
-#         plans = {}
-#         for col in plan_cols:
-#             # Use column name as plan name (fixed from previous version)
-#             plan_name = self.raw_data.columns[col]
-#             
-#             # Extract coverage rules for each event
-#             event_coverage = {}
-#             for idx, event in enumerate(self.events_df['event']):
-#                 coverage_value = self.raw_data.iloc[idx, col]
-#                 if pd.notna(coverage_value):
-#                     event_coverage[event] = coverage_value
-#             
-#             # Create plan object with all parameters
-#             plans[plan_name] = PlanParameters(
-#                 name=plan_name,
-#                 premium=param_data.iloc[0, col],
-#                 deductible_individual=param_data.iloc[1, col],
-#                 max_oop_individual=param_data.iloc[2, col],
-#                 deductible_family=param_data.iloc[3, col],
-#                 max_oop_family=param_data.iloc[4, col],
-#                 event_coverage=event_coverage
-#             )
-#         
-#         return plans
-# =============================================================================
     
     def initialize_simulation(self, n_simulations: int, year: Optional[int] = None):
         """
@@ -846,46 +696,6 @@ class HealthSimulation:
         print(f"  Max events in a simulation: {total_events_per_simulation.max()}")
         
         print("Individualized family member simulation complete!")
-# =============================================================================
-#     def run_simulation(self, seed: Optional[int] = None):
-#         """
-#         Run the Monte Carlo simulation of event occurrences.
-#         Generates random events for each family member, day, and simulation run.
-#         
-#         Args:
-#             seed: Random seed for reproducibility
-#         """
-#         if self.sim_data is None:
-#             raise ValueError("Must call initialize_simulation before running simulation")
-#             
-#         # Set random seed if provided for reproducibility
-#         if seed is not None:
-#             np.random.seed(seed)
-#             
-#         # Get daily probabilities for each event
-#         daily_probs = self.events_df.set_index('event')['daily_prob']
-#         
-#         # Reshape probabilities to match our dimensions:
-#         # (events, 1, 1, 1) -> will broadcast to (events, days, family_members, simulations)
-#         prob_array = daily_probs.values.reshape(-1, 1, 1, 1)
-#         
-#         # Get the sizes we need from our xarray structure
-#         n_days = self.sim_data.sizes['day']
-#         n_family_members = self.sim_data.sizes['family_member']
-#         n_simulations = self.sim_data.sizes['simulation']
-#         
-#         # Broadcast to full size and transpose to match our xarray dimensions
-#         prob_array = np.broadcast_to(
-#             prob_array,
-#             (daily_probs.shape[0], n_days, n_family_members, n_simulations)
-#         ).transpose(1, 0, 2, 3)  # reorder to (days, events, family_members, simulations)
-#         
-#         # Generate random numbers for the full 4D structure
-#         random_values = np.random.random(self.sim_data.occurrences.shape)
-#         
-#         # Determine which events occur (where random value < probability)
-#         self.sim_data['occurrences'].values = random_values < prob_array
-# =============================================================================
     
     @property
     def raw_costs(self) -> pd.Series:
@@ -1092,56 +902,6 @@ class HealthSimulation:
         plt.tight_layout()
         plt.show()
 
-# =============================================================================
-#     def plot_distributions(self, plan_name: Optional[str] = None) -> None:
-#         """
-#         Create separate plots for histogram and cumulative distributions of yearly total costs.
-#         
-#         Args:
-#             plan_name: Optional specific plan to analyze. If None, plots all plans.
-#         """
-#         plans_to_analyze = [plan_name] if plan_name else list(self.plans.keys())
-#         
-#         # Color cycle for consistent plan colors across both plots
-#         colors = plt.cm.tab10(np.linspace(0, 1, len(plans_to_analyze)))
-#         
-#         # First plot: Histogram
-#         plt.figure(figsize=(10, 6))
-#         for plan, color in zip(plans_to_analyze, colors):
-#             yearly_totals = self.get_yearly_totals(plan)
-#             mean = yearly_totals.mean()
-#             std = yearly_totals.std()
-#             
-#             plt.hist(yearly_totals, bins=20, alpha=0.7, color=color, 
-#                     density=True, label=f"{plan}\nμ=${mean:,.0f}, σ=${std:,.0f}")
-#         
-#         plt.title("Distribution of Yearly Total Costs")
-#         plt.xlabel("Total Cost ($)")
-#         plt.ylabel("Density")
-#         plt.legend()
-#         plt.grid(True, alpha=0.3)
-#         plt.set_ylim()
-#         
-#         plt.tight_layout()
-#         plt.show()
-#         
-#         # Second plot: Cumulative Distribution
-#         plt.figure(figsize=(10, 6))
-#         for plan, color in zip(plans_to_analyze, colors):
-#             yearly_totals = self.get_yearly_totals(plan)
-#             
-#             plt.hist(yearly_totals, bins=20, density=True, cumulative=True,
-#                     histtype='stepfilled', color=color, alpha=0.5, label=plan)
-#         
-#         plt.title("Cumulative Distribution of Yearly Total Costs")
-#         plt.xlabel("Total Cost ($)")
-#         plt.ylabel("Cumulative Probability")
-#         plt.legend()
-#         plt.grid(True, alpha=0.3)
-#         plt.tight_layout()
-#         plt.show()
-# =============================================================================
-
     def analyze_lowest_cost(self, plot: bool = True) -> None:
         """
         Analyze which plans most frequently have the lowest total annual cost.
@@ -1225,14 +985,31 @@ if __name__ == "__main__":
 #     test.print_cost_summaries()
 #     # print("Loaded.")
 # =============================================================================
-#Testing -- single person with low events
-    from Sim_Manipulator import *
-    filename = 'Health_Monte_Carlo_Input_ValidationThreePerson.xlsx'
-    base = HealthSimulation(filename)
-    base.initialize_simulation(1)
-    base.run_simulation()
-    base.run_cost_analysis()
-    base.print_cost_summaries()
-    controlled = create_validation_scenario(base)
-    # print("Loaded.")
-
+# =============================================================================
+# #Testing -- single person with low events
+#     from Sim_Manipulator import *
+#     filename = 'Health_Monte_Carlo_Input_ValidationThreePerson.xlsx'
+#     base = HealthSimulation(filename)
+#     base.initialize_simulation(1)
+#     base.run_simulation()
+#     base.run_cost_analysis()
+#     base.print_cost_summaries()
+#     controlled = create_validation_scenario(base)
+#     # print("Loaded.")
+# =============================================================================
+# =============================================================================
+# #Testing -- validation case against @Risk model
+#     filename = 'Health_Monte_Carlo_Input_ValidationATRISK.xlsx'
+#     sim = HealthSimulation(filename)
+#     sim.initialize_simulation(5000)
+#     sim.run_simulation()
+#     sim.run_cost_analysis()
+#     sim.print_cost_summaries()
+# =============================================================================
+#Testing -- final check for runs before last commit
+    filename = 'Health_Monte_Carlo_Input_ValidationATRISK.xlsx'
+    foo = HealthSimulation(filename)
+    foo.initialize_simulation(5)
+    foo.run_simulation()
+    foo.run_cost_analysis()
+    foo.print_cost_summaries()
