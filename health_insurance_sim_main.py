@@ -1,12 +1,26 @@
+# =============================================================================
+# Copyright (C) 2025 W. Beau Griffith
+# 
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+# 
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+# =============================================================================
+
 import pandas as pd
 import numpy as np
 import xarray as xr
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
 from dataclasses import dataclass
-import warnings
-import multiprocessing as mp
-from functools import partial
 from joblib import Parallel, delayed
 import os
 import matplotlib.pyplot as plt
@@ -952,64 +966,4 @@ class HealthSimulation:
             plt.tight_layout()
             plt.show()
 
-if __name__ == "__main__":
-# =============================================================================
-#     filename = 'Health_Monte_Carlo_Input.xlsx'
-#     test = HealthSimulation(filename)
-#     test.initialize_simulation(500,2025)
-#     test.run_simulation()
-#     test.run_cost_analysis()
-#     test.plot_distributions()
-# =============================================================================
-    
-# =============================================================================
-# #Debugging -- 0 events
-#     filename = 'Health_Monte_Carlo_Input_Zeros.xlsx'
-#     test = HealthSimulation(filename)
-#     test.initialize_simulation(1,2025)
-#     test.run_simulation()
-#     test.run_cost_analysis()
-#     test.plot_distributions()
-#     test.print_cost_summaries()
-#     # print("Loaded.")
-# =============================================================================
 
-# =============================================================================
-# #Testing -- single person with low events
-#     filename = 'Health_Monte_Carlo_Input_IO_Check.xlsx'
-#     test = HealthSimulation(filename)
-#     test.initialize_simulation(1,2025)
-#     test.run_simulation()
-#     test.run_cost_analysis()
-#     test.plot_distributions()
-#     test.print_cost_summaries()
-#     # print("Loaded.")
-# =============================================================================
-# =============================================================================
-# #Testing -- single person with low events
-#     from Sim_Manipulator import *
-#     filename = 'Health_Monte_Carlo_Input_ValidationThreePerson.xlsx'
-#     base = HealthSimulation(filename)
-#     base.initialize_simulation(1)
-#     base.run_simulation()
-#     base.run_cost_analysis()
-#     base.print_cost_summaries()
-#     controlled = create_validation_scenario(base)
-#     # print("Loaded.")
-# =============================================================================
-# =============================================================================
-# #Testing -- validation case against @Risk model
-#     filename = 'Health_Monte_Carlo_Input_ValidationATRISK.xlsx'
-#     sim = HealthSimulation(filename)
-#     sim.initialize_simulation(5000)
-#     sim.run_simulation()
-#     sim.run_cost_analysis()
-#     sim.print_cost_summaries()
-# =============================================================================
-#Testing -- final check for runs before last commit
-    filename = 'Health_Monte_Carlo_Input_ValidationATRISK.xlsx'
-    foo = HealthSimulation(filename)
-    foo.initialize_simulation(5)
-    foo.run_simulation()
-    foo.run_cost_analysis()
-    foo.print_cost_summaries()
