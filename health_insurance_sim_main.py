@@ -1,12 +1,26 @@
+# =============================================================================
+# Copyright (C) 2025 W. Beau Griffith
+# 
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+# 
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+# =============================================================================
+
 import pandas as pd
 import numpy as np
 import xarray as xr
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Tuple
 from dataclasses import dataclass
-import warnings
-import multiprocessing as mp
-from functools import partial
 from joblib import Parallel, delayed
 import os
 import matplotlib.pyplot as plt
@@ -951,3 +965,12 @@ class HealthSimulation:
             plt.grid(True, alpha=0.3, axis='y')
             plt.tight_layout()
             plt.show()
+
+if __name__=="__main__":
+    foo = HealthSimulation('Health_Monte_Carlo_Input.xlsx')
+    foo.initialize_simulation(50)
+    foo.run_simulation()
+    foo.run_cost_analysis()
+    foo.print_cost_summaries()
+    foo.plot_distributions(ylim=0.015)
+    foo.analyze_lowest_cost()
