@@ -111,11 +111,11 @@ All commands are methods from a HealthSimulation class object. The only argument
  - **plot_distributions**: this will give both the probability density functions and cumulative density functions for all plans (or subset of all plans). | Args: 
 	 - plan_name (optional: if you want to see a specific plan, or a subset of all the plans, pass in a list of their name(s))
 	 - ylim (optional: manually set the y-axis for the pdf. Defaults to 0.03)
- - **print_cost_summaries**: this will print the min, max, mean, and standard deviation for each plan (or the subset you select). Args:
+ - **print_cost_summaries**: this will print the min, max, mean, and standard deviation for each plan (or the subset you select). | Args:
 	 - plan_name (optional: if you want summaries for a specific plan or subset, pass in a list of their name(s))
- - **analyze_lowest_cost**: this will go through each simulation and identify which plan had the lowest overall cost for that scenario, then report frequencies for these results as well as plot a pareto chart. Args:
+ - **analyze_lowest_cost**: this will go through each simulation and identify which plan had the lowest overall cost for that scenario, then report frequencies for these results as well as plot a pareto chart. | Args:
 	 - plot (detaults to True; change to False if you don't want the pareto chart)
-- **summarize_events**: this will print the frequences of each event for each family member (or the selected family member) for a given simulation. (Primarily useful in troubleshooting unexpected results). Args:
+- **summarize_events**: this will print the frequences of each event for each family member (or the selected family member) for a given simulation. (Primarily useful in troubleshooting unexpected results). | Args:
 	- sim_index (integer index for which simulation to report)
 	- family_member (optional: list of name(s) for which family member to report on)
 
@@ -166,9 +166,10 @@ Areas for further development that I will incorporate in some future release (or
 
  - Add a feature to set fixed events across all sims. For example, if you have a recurring physical therapy appointment that's (relatively) deterministic: you know you're going to go once a month for 6 months. It would be helpful to be able to set this as a fixed occurrence in all iterations of the sim instead of having the sim run probabilities for this.
  - Add flags for HSA-eligible plans and account for the tax benefits in the costs (see "recommendations" for workaround until this is implemented).
- - Add features to plot costs over time (average, and across all simulations), and statistics on monthly cash flows (what if you can't afford a $10,000 bill one month, even if the policy theoretically has the lowest costs across the year?)
- - Improvements to runtime: I don't believe there's a way to actually reduce the Order of the sim processing, but enhancements in parallelization or other efficiencies that even marginally improve runtime are the subject of future development.
  - Plotting costs (and events) over time, both for individual sims (or spans of sims) as well as the mean across all sims.
+ - Report statistics on monthly cash flows (what if you can't afford a $10,000 bill one month, even if the policy theoretically has the lowest costs across the year?)
+ - Improvements to runtime: I don't believe there's a way to actually reduce the Order of the sim processing, but enhancements in parallelization or other efficiencies that even marginally improve runtime are the subject of future development.
+
 
 ### Contributing
 
