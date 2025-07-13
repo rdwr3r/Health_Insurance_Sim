@@ -1,4 +1,4 @@
-﻿
+
 # Healthcare Insurance Monte Carlo Simulation
 
 **Version 1.0.0**
@@ -139,6 +139,7 @@ The current version (V 1.0.0) allows for simple analysis of a complex topic (mos
 ### Technical Recommendations
  - It can be helpful to run an initial compute time check using one simulation. The code is set up to run the assessment with parallelization by plans - so if you have more plans than you have cores, it'll use all of your cores (and otherwise run each plan in parallel). 
  - Ideally you can stomach the compute time to run 1,000+ simulations, potentially 5,000. 
+ - **Currently the sim does not account for the tax benefits of HSA contributions for eligible plans**. This can be worked around by simply deducting the advantage (based on your projected contributions and effective tax rate) from the premium for any applicable plan.
 
 ### Interpretation
  - Generally, one should consider not just the minimum, maximum, and mean (expected) costs for any given plan, but also the distributions (standard deviation and shape). 
@@ -164,6 +165,8 @@ This is released under the AGPT-3.0 license. See "LICENSE" file for details.
 Areas for further development that I will incorporate in some future release (or would love for collaborators to submit pull requests for!):
 
  - Add a feature to set fixed events across all sims. For example, if you have a recurring physical therapy appointment that's (relatively) deterministic: you know you're going to go once a month for 6 months. It would be helpful to be able to set this as a fixed occurrence in all iterations of the sim instead of having the sim run probabilities for this.
+ - Add flags for HSA-eligible plans and account for the tax benefits in the costs (see "recommendations" for workaround until this is implemented).
+ - Add features to plot costs over time (average, and across all simulations), and statistics on monthly cash flows (what if you can't afford a $10,000 bill one month, even if the policy theoretically has the lowest costs across the year?)
  - Improvements to runtime: I don't believe there's a way to actually reduce the Order of the sim processing, but enhancements in parallelization or other efficiencies that even marginally improve runtime are the subject of future development.
  - Plotting costs (and events) over time, both for individual sims (or spans of sims) as well as the mean across all sims.
 
