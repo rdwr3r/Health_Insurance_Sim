@@ -440,9 +440,6 @@ class HealthSimulation:
                 if pd.isna(numeric_premium):
                     print(f"    Rejected: premium value '{premium_value}' is not numeric")
                     continue
-                if numeric_premium <= 0:
-                    print(f"    Rejected: premium value {numeric_premium} is not positive")
-                    continue
                     
                 print(f"    Accepted: valid plan column with premium ${numeric_premium:,.2f}")
                 valid_plan_cols.append(col_idx)
@@ -968,7 +965,7 @@ class HealthSimulation:
 
 if __name__=="__main__":
     foo = HealthSimulation('Health_Monte_Carlo_Input.xlsx')
-    foo.initialize_simulation(500)
+    foo.initialize_simulation(100)
     foo.run_simulation()
     foo.run_cost_analysis()
     foo.print_cost_summaries()
