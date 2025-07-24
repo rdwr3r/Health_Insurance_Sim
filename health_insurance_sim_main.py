@@ -282,7 +282,7 @@ class HealthSimulation:
         self.n_family_members = len(self.family_members)
         
         # Get tax rate from specified cell
-        tax_section = self.raw_data[self.raw_data.iloc[:, 0] == "Marginal Tax Rate"].index[0]
+        tax_section = self.raw_data[self.raw_data.iloc[:, 0] == "Effective Tax Rate"].index[0]
         self.tax_rate = self.raw_data.iloc[tax_section, 1]
         
         # Extract core simulation data (events and their probabilities)
@@ -440,9 +440,6 @@ class HealthSimulation:
                 numeric_premium = pd.to_numeric(premium_value, errors='coerce')
                 if pd.isna(numeric_premium):
                     print(f"    Rejected: premium value '{premium_value}' is not numeric")
-                    continue
-                if numeric_premium <= 0:
-                    print(f"    Rejected: premium value {numeric_premium} is not positive")
                     continue
                     
                 print(f"    Accepted: valid plan column with premium ${numeric_premium:,.2f}")
@@ -1137,7 +1134,7 @@ class HealthSimulation:
 
 if __name__=="__main__":
     foo = HealthSimulation('Health_Monte_Carlo_Input.xlsx')
-    foo.initialize_simulation(50)
+    foo.initialize_simulation(100)
     foo.run_simulation()
     foo.run_cost_analysis()
     foo.print_cost_summaries()
