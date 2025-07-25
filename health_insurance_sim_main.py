@@ -481,8 +481,13 @@ class HealthSimulation:
                 print(f"  Numeric premium: ${numeric_premium:,.2f}")
                 
                 # Apply tax adjustment
-                effective_premium = numeric_premium * (1 - self.tax_rate)
-                print(f"  Tax-adjusted premium: ${effective_premium:,.2f} (tax rate: {self.tax_rate:.1%})")
+                if numeric_premium > 0:
+                    effective_premium = numeric_premium * (1 - self.tax_rate)
+                    print(f"  Tax-adjusted premium: ${effective_premium:,.2f} (tax rate: {self.tax_rate:.1%})")
+                else: 
+                    effective_premium = numeric_premium
+                    print(f"  Negative raw premium detected. Effective premium: ${effective_premium:,.2f}. (Assuming tax benefits have been already accounted for.)")
+
                 
                 # Extract other plan parameters with validation
                 try:
