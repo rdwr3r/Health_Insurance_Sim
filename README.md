@@ -118,6 +118,10 @@ All commands are methods from a HealthSimulation class object. The only argument
 - **summarize_events**: this will print the frequences of each event for each family member (or the selected family member) for a given simulation. (Primarily useful in troubleshooting unexpected results). | Args:
 	- sim_index (integer index for which simulation to report)
 	- family_member (optional: list of name(s) for which family member to report on)
+- **print_monthly_cost_summaries**: this will print an analysis of each plan's monthly costs to the console. It will give the single highest month's cost across all simulations for each plan, the average, and the minimum. NOTE: the minimum is defined as the lowest MAX month across all simulations. For example, if there were 2 simulations and Plan A had the following monthly costs: {100, 100, 100, 100, ..., 1000}; {1, 1, 1...999}, the "minimum" monthly cost would be $999, because it's the lowest maximum across all simulations. | Args:
+	- plan_names (optional: if you want summaries for a specific plan or subset, pass in a list of their name(s))
+- **plot_monthly_cost_analysis**: this will plot the monthly costs for the minimum and maximum plans selected (see print_monthly_cost_summaries for definition of minimum) as well as the average for all the plans across all simulations as well as cumulative costs through the year. | Args:
+    - plan_names (optional: if you want summaries for a specific plan or subset, pass in a list of their name(s))
 
 An example set of commands in the console might look like:
 ```python
@@ -143,7 +147,7 @@ The current version (V 1.0.0) allows for simple analysis of a complex topic (mos
 
 ### Interpretation
  - Generally, one should consider not just the minimum, maximum, and mean (expected) costs for any given plan, but also the distributions (standard deviation and shape). 
- - Besides these specific, quantitative factors, one needs to consider things like risk tolerance (the cheapest expected value might also have an unacceptably high potential maximum), cash flow needs (the cheapest plan might also have volatile costs on a month-to-month basis) and other factors (for example, tax advantages with HSA-qualified plans).
+ - Besides these specific, quantitative factors, one needs to consider things like risk tolerance (the cheapest expected value might also have an unacceptably high potential maximum), cash flow needs (the cheapest plan might also have volatile costs on a month-to-month basis) and other factors (for example, long-term tax advantages with HSA-qualified plans).
  - Besides these factors, things like quality of care, continuity with a given provider, customer service, pre-authorization requirements, network size and provider availability, are all out of the scope of this simulation (no matter how advanced its development becomes) and may be more important than cost metrics.
 
 **Healthcare needs and health insurance are very complex and a single analysis can not possibly represent the needs, risks, and desires of the consumer.**
@@ -161,12 +165,16 @@ This is released under the AGPT-3.0 license. See "LICENSE" file for details.
 -   Basic visualization tools
 -   Parallel processing support
 
+### 1.1.0 Release
+
+ - Added print_monthly_cost_summaries and plot_monthly_cost_analysis methods to describe and visualize monthly cash flows across plans.
+ - Minor update to how premiums are calculated to facilitate the workaround tax benefits for HSA-eligible plans noted above.
+
 ### Future Work
 Areas for further development that I will incorporate in some future release (or would love for collaborators to submit pull requests for!):
 
  - Add a feature to set fixed events across all sims. For example, if you have a recurring physical therapy appointment that's (relatively) deterministic: you know you're going to go once a month for 6 months. It would be helpful to be able to set this as a fixed occurrence in all iterations of the sim instead of having the sim run probabilities for this.
  - Add flags for HSA-eligible plans and account for the tax benefits in the costs (see "recommendations" for workaround until this is implemented).
- - Plotting costs (and events) over time, both for individual sims (or spans of sims) as well as the mean across all sims.
  - Report statistics on monthly cash flows (what if you can't afford a $10,000 bill one month, even if the policy theoretically has the lowest costs across the year?)
  - Improvements to runtime: I don't believe there's a way to actually reduce the Order of the sim processing, but enhancements in parallelization or other efficiencies that even marginally improve runtime are the subject of future development.
 
