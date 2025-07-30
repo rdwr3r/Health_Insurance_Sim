@@ -175,7 +175,6 @@ Areas for further development that I will incorporate in some future release (or
 
  - Add a feature to set fixed events across all sims. For example, if you have a recurring physical therapy appointment that's (relatively) deterministic: you know you're going to go once a month for 6 months. It would be helpful to be able to set this as a fixed occurrence in all iterations of the sim instead of having the sim run probabilities for this.
  - Add flags for HSA-eligible plans and account for the tax benefits in the costs (see "recommendations" for workaround until this is implemented).
- - Report statistics on monthly cash flows (what if you can't afford a $10,000 bill one month, even if the policy theoretically has the lowest costs across the year?)
  - Improvements to runtime: I don't believe there's a way to actually reduce the Order of the sim processing, but enhancements in parallelization or other efficiencies that even marginally improve runtime are the subject of future development.
 
 
