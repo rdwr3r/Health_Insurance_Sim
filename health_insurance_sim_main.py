@@ -1200,7 +1200,7 @@ class HealthSimulation:
             if seed is not None:
                 np.random.seed(seed)
             # Randomly distribute throughout the year
-            event_days = sorted(np.random.choice(n_days, size=count, replace=False))
+            event_days = sorted(np.random.choice(n_days, size=count, replace=False).tolist())
         
         elif distribution == 'manual':
             # Use the specific days provided
@@ -1232,7 +1232,7 @@ class HealthSimulation:
         self.applied_fixed_events.append(fixed_event_record)
         
         print(f"Applied fixed events: {family_member} will have {count} {event_type} events "
-              f"on days {event_days[:5]}{'...' if len(event_days) > 5 else ''} ({distribution})")
+              f"on days {(event_days[:])} ({distribution})")
     
     def clear_fixed_events(self):
         """
@@ -1262,7 +1262,7 @@ class HealthSimulation:
                     events_cleared += 1
             
             print(f"  Removed: {record['family_member']} - {record['event_type']} "
-                  f"x{record['count']} from days {days[:3]}{'...' if len(days) > 3 else ''}")
+                  f"x{record['count']} from days {days[:]}")
         
         # Clear the tracking list
         self.applied_fixed_events = []
@@ -1279,7 +1279,7 @@ class HealthSimulation:
         
         total_events = 0
         for i, record in enumerate(self.applied_fixed_events, 1):
-            days_summary = f"{record['days'][:3]}" + ("..." if len(record['days']) > 3 else "")
+            days_summary = f"{record['days'][:]}"
             print(f"{i}. {record['family_member']}: {record['event_type']} x{record['count']} "
                   f"({record['distribution']}) on days {days_summary}")
             total_events += record['count']
@@ -1382,7 +1382,7 @@ class HealthSimulation:
 
 if __name__=="__main__":
     foo = HealthSimulation('Health_Monte_Carlo_Input_Checks.xlsx')
-    foo.initialize_simulation(20)
+    foo.initialize_simulation(5)
     foo.run_simulation()
     foo.run_cost_analysis()
     foo.print_cost_summaries()
