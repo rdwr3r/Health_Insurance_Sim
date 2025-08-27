@@ -49,10 +49,13 @@ class PlanParameters:
     max_oop_family: float
     event_coverage: Dict[str, float]
     cost_results = None
+    hsa_eligible: bool = False 
 
     def calculate_costs(self, 
-                         simulation_events: xr.Dataset,
-                         raw_costs: pd.Series) -> xr.Dataset:
+                       simulation_events: xr.Dataset,
+                       raw_costs: pd.Series,
+                       hsa_contribution: float = 0,
+                       tax_rate: float = 0) -> xr.Dataset:
         """
         Calculate costs for all events in a simulation under this plan's rules.
         Implements proportional threshold decomposition for accurate deductible 
@@ -93,7 +96,14 @@ class PlanParameters:
                 
                 # Add monthly premium on first day of each month
                 if day_of_month == 1:
-                    premium_daily_costs[sim, day] = monthly_premium
+                    daily_cost = monthly_premium
+                    
+                    # Apply monthly HSA tax benefit for HSA-eligible plans
+                    if self.hsa_eligible and hsa_contribution > 0:
+                        monthly_hsa_benefit = (hsa_contribution * tax_rate) / 12
+                        daily_cost -= monthly_hsa_benefit  # Subtract benefit (reduces cost)
+                    
+                    premium_daily_costs[sim, day] = daily_cost
                 
                 # Get previous day's accumulation totals
                 prev_fam_deductible = family_deductible_met[sim, day-1] if day > 0 else 0
@@ -285,6 +295,10 @@ class HealthSimulation:
         tax_section = self.raw_data[self.raw_data.iloc[:, 0] == "Effective Tax Rate"].index[0]
         self.tax_rate = self.raw_data.iloc[tax_section, 1]
         
+        # Get HSA contribution from specified cell
+        hsa_section = self.raw_data[self.raw_data.iloc[:, 0] == "HSA Contribution"].index[0]
+        self.hsa_contribution = self.raw_data.iloc[hsa_section, 1]
+        
         # Extract core simulation data (events and their probabilities)
         self.events_df = self._extract_events()
         
@@ -393,7 +407,7 @@ class HealthSimulation:
             # Skip obviously non-plan columns based on header
             if (pd.isna(header) or header == '' or 
                 (isinstance(header, str) and header.startswith('Unnamed'))):
-                print(f"    Skipping empty/unnamed column")
+                print("    Skipping empty/unnamed column")
                 plan_start_col = col_idx + 1
                 continue
             
@@ -428,7 +442,7 @@ class HealthSimulation:
             # Skip columns with clearly non-plan headers
             if (pd.isna(header) or header == '' or 
                 (isinstance(header, str) and header.startswith('Unnamed'))):
-                print(f"    Rejected: invalid header")
+                print("    Rejected: invalid header")
                 continue
             
             # Validate that this column contains numeric data in the premium row
@@ -499,7 +513,7 @@ class HealthSimulation:
                     # Validate all parameters are numeric
                     if any(pd.isna(val) for val in [deductible_individual, max_oop_individual, 
                                                   deductible_family, max_oop_family]):
-                        print(f"  ERROR: Non-numeric values found in plan parameters. Skipping plan.")
+                        print("  ERROR: Non-numeric values found in plan parameters. Skipping plan.")
                         continue
                         
                     print(f"  Individual deductible: ${deductible_individual:,.2f}")
@@ -534,6 +548,20 @@ class HealthSimulation:
                 
                 print(f"  Successfully extracted {len(event_coverage)} event coverage rules")
                 
+                # Extract HSA eligibility for this plan
+                hsa_eligible = False
+                hsa_row_matches = self.raw_data[self.raw_data.iloc[:, 0] == "HSA Eligible?"].index
+                if len(hsa_row_matches) > 0:
+                    hsa_row = hsa_row_matches[0]
+                    hsa_value = self.raw_data.iloc[hsa_row, col_idx]
+                    if isinstance(hsa_value, str) and hsa_value.upper() == "YES":
+                        hsa_eligible = True
+                        print("  HSA eligible: YES")
+                    else:
+                        print("  HSA eligible: NO")
+                else:
+                    print("  HSA eligibility not found, defaulting to NO")
+                
                 # Create the plan object
                 plans[plan_name] = PlanParameters(
                     name=plan_name,
@@ -542,7 +570,8 @@ class HealthSimulation:
                     max_oop_individual=max_oop_individual,
                     deductible_family=deductible_family,
                     max_oop_family=max_oop_family,
-                    event_coverage=event_coverage
+                    event_coverage=event_coverage,
+                    hsa_eligible=hsa_eligible
                 )
                 
                 print(f"  ✓ Successfully created plan: {plan_name}")
@@ -738,7 +767,9 @@ class HealthSimulation:
             print(f"Started processing {plan_name}")
             cost_results = plan.calculate_costs(
                 simulation_events=self.sim_data,
-                raw_costs=self.raw_costs
+                raw_costs=self.raw_costs,
+                hsa_contribution=self.hsa_contribution,  # ADD THIS LINE
+                tax_rate=self.tax_rate  # ADD THIS LINE
             )
             print(f"Completed calculations for {plan_name}")
             return (plan_name, cost_results)  # Return tuple of name and results
