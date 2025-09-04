@@ -470,7 +470,7 @@ class HealthSimulation:
         
         # Stage 5: Extract parameter data section
         print("Stage 5: Extracting plan parameters...")
-        param_data = self.raw_data.iloc[premium_row:premium_row+5].copy()
+        param_data = self.raw_data.iloc[premium_row:premium_row+6].copy()
         print(f"Parameter data shape: {param_data.shape}")
         
         # Stage 6: Create plan objects with enhanced error handling
@@ -499,7 +499,7 @@ class HealthSimulation:
                     effective_premium = numeric_premium * (1 - self.tax_rate)
                     print(f"  Tax-adjusted premium: ${effective_premium:,.2f} (tax rate: {self.tax_rate:.1%})")
                 else: 
-                    effective_premium = numeric_premium
+                    effective_premium = numeric_premium * (1 - self.tax_rate)
                     print(f"  Negative raw premium detected. Effective premium: ${effective_premium:,.2f}. (Assuming tax benefits have been already accounted for.)")
 
                 
@@ -509,6 +509,31 @@ class HealthSimulation:
                     max_oop_individual = pd.to_numeric(param_data.iloc[2, col_idx], errors='coerce')
                     deductible_family = pd.to_numeric(param_data.iloc[3, col_idx], errors='coerce')
                     max_oop_family = pd.to_numeric(param_data.iloc[4, col_idx], errors='coerce')
+                    if param_data.iloc[5, col_idx] == 'YES':
+                        print("  HSA Eligible: YES")
+                        hsa_eligible = True
+                    else:
+                        print("  HSA Eligible: NO or NOT FOUND")
+                        hsa_eligible = False
+                    
+                    
+# =============================================================================
+#             # Extract HSA eligibility for this plan
+#             hsa_eligible = False
+#             hsa_row_matches = self.raw_data[self.raw_data.iloc[:, 0] == "HSA Eligible?"].index
+#             print(f'Found HSA Eligible? row: {hsa_row_matches}')
+#             if len(hsa_row_matches) > 0:
+#                 print("Hsa_row_matches > 0")
+#                 hsa_row = hsa_row_matches[0]
+#                 hsa_value = self.raw_data.iloc[hsa_row, col_idx]
+#                 if isinstance(hsa_value, str) and hsa_value.upper() == "YES":
+#                     hsa_eligible = True
+#                     print("  HSA eligible: YES")
+#                 else:
+#                     print("  HSA eligible: NO")
+#             else:
+#                 print("  HSA eligibility not found, defaulting to NO")
+# =============================================================================
                     
                     # Validate all parameters are numeric
                     if any(pd.isna(val) for val in [deductible_individual, max_oop_individual, 
@@ -547,20 +572,6 @@ class HealthSimulation:
                             print(f"    WARNING: Error processing coverage for {event_name}: {e}")
                 
                 print(f"  Successfully extracted {len(event_coverage)} event coverage rules")
-                
-                # Extract HSA eligibility for this plan
-                hsa_eligible = False
-                hsa_row_matches = self.raw_data[self.raw_data.iloc[:, 0] == "HSA Eligible?"].index
-                if len(hsa_row_matches) > 0:
-                    hsa_row = hsa_row_matches[0]
-                    hsa_value = self.raw_data.iloc[hsa_row, col_idx]
-                    if isinstance(hsa_value, str) and hsa_value.upper() == "YES":
-                        hsa_eligible = True
-                        print("  HSA eligible: YES")
-                    else:
-                        print("  HSA eligible: NO")
-                else:
-                    print("  HSA eligibility not found, defaulting to NO")
                 
                 # Create the plan object
                 plans[plan_name] = PlanParameters(
@@ -1412,8 +1423,8 @@ class HealthSimulation:
         return stats
 
 if __name__=="__main__":
-    foo = HealthSimulation('Health_Monte_Carlo_Input_Checks.xlsx')
-    foo.initialize_simulation(5)
+    foo = HealthSimulation('Health_Monte_Carlo_Input_Updated.xlsx')
+    foo.initialize_simulation(50)
     foo.run_simulation()
     foo.run_cost_analysis()
     foo.print_cost_summaries()
