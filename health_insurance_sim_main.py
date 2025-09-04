@@ -516,25 +516,6 @@ class HealthSimulation:
                         print("  HSA Eligible: NO or NOT FOUND")
                         hsa_eligible = False
                     
-                    
-# =============================================================================
-#             # Extract HSA eligibility for this plan
-#             hsa_eligible = False
-#             hsa_row_matches = self.raw_data[self.raw_data.iloc[:, 0] == "HSA Eligible?"].index
-#             print(f'Found HSA Eligible? row: {hsa_row_matches}')
-#             if len(hsa_row_matches) > 0:
-#                 print("Hsa_row_matches > 0")
-#                 hsa_row = hsa_row_matches[0]
-#                 hsa_value = self.raw_data.iloc[hsa_row, col_idx]
-#                 if isinstance(hsa_value, str) and hsa_value.upper() == "YES":
-#                     hsa_eligible = True
-#                     print("  HSA eligible: YES")
-#                 else:
-#                     print("  HSA eligible: NO")
-#             else:
-#                 print("  HSA eligibility not found, defaulting to NO")
-# =============================================================================
-                    
                     # Validate all parameters are numeric
                     if any(pd.isna(val) for val in [deductible_individual, max_oop_individual, 
                                                   deductible_family, max_oop_family]):
