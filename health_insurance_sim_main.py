@@ -760,8 +760,8 @@ class HealthSimulation:
             cost_results = plan.calculate_costs(
                 simulation_events=self.sim_data,
                 raw_costs=self.raw_costs,
-                hsa_contribution=self.hsa_contribution,  # ADD THIS LINE
-                tax_rate=self.tax_rate  # ADD THIS LINE
+                hsa_contribution=self.hsa_contribution, 
+                tax_rate=self.tax_rate
             )
             print(f"Completed calculations for {plan_name}")
             return (plan_name, cost_results)  # Return tuple of name and results
@@ -1404,7 +1404,7 @@ class HealthSimulation:
         return stats
 
 if __name__=="__main__":
-    foo = HealthSimulation('Health_Monte_Carlo_Input_Updated.xlsx')
+    foo = HealthSimulation('Health_Monte_Carlo_Input.xlsx')
     foo.initialize_simulation(50)
     foo.run_simulation()
     foo.run_cost_analysis()
