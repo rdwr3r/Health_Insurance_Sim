@@ -137,7 +137,6 @@ All commands are methods from a HealthSimulation class object. The only argument
 	 - plan_names (optional: if you want summaries for a specific plan or a set of plans, pass in a list of their name(s))
  - **plot_monthly_cost_analysis: this will plot the monthly costs for the minimum, maximum, and average plans (as discussed above) and cumulative costs aggregated throughout the year. | Args:
 	- plan_names (optional: list of name(s) for specific plan(s) you want to have plotted)
-
  - **add_fixed_events**: Add fixed (deterministic) events that will occur in all simulations. This is useful for known recurring appointments (e.g. physical therapy). | Args:
 	- family_member (name matching Excel file)
    - event_type (event name matching Excel file)
@@ -183,7 +182,7 @@ The current version (V 1.2.0) allows for simple analysis of a complex topic (mos
 
 ### Interpretation
  - Generally, one should consider not just the minimum, maximum, and mean (expected) costs for any given plan, but also the distributions (standard deviation and shape). 
- - Besides these specific, quantitative factors, one needs to consider things like risk tolerance (the cheapest expected value might also have an unacceptably high potential maximum), cash flow needs (the cheapest plan might also have volatile costs on a month-to-month basis) and other factors (for example, tax advantages with HSA-qualified plans).
+ - Besides these specific, quantitative factors, one needs to consider things like risk tolerance (the cheapest expected value might also have an unacceptably high potential maximum), cash flow needs (the cheapest plan might also have volatile costs on a month-to-month basis) and other factors (for example, long-term tax advantages with HSA-qualified plans).
  - Besides these factors, things like quality of care, continuity with a given provider, customer service, pre-authorization requirements, network size and provider availability, are all out of the scope of this simulation (no matter how advanced its development becomes) and may be more important than cost metrics.
 
 **Healthcare needs and health insurance are very complex and a single analysis can not possibly represent the needs, risks, and desires of the consumer.**
@@ -202,7 +201,6 @@ This is released under the AGPT-3.0 license. See "LICENSE" file for details.
 -   Parallel processing support
 
 ### 1.1.0 Release
-
 -   Added print_monthly_cost_summaries and plot_monthly_cost_analysis methods to describe and visualize monthly cash flows across plans.
 -   Minor update to how premiums are calculated to facilitate the workaround tax benefits for HSA-eligible plans noted above.
 
@@ -215,7 +213,6 @@ This is released under the AGPT-3.0 license. See "LICENSE" file for details.
 
 ### Future Work
 Currently the only future development I'm planning is to research ways to improve runtime. Switching parallelization over to run on a per-sim rather than a per-plan basis should improve performance on machines with more cores than plans, but will require refactoring some of the code. I'd welcome any help with this from collaborators.
-
 Please let me know if there are areas you see for improvement or more features in this tool. Bonus points if you will help write them!
 
 ### Contributing

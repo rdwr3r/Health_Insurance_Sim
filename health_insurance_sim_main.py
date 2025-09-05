@@ -502,7 +502,6 @@ class HealthSimulation:
                     effective_premium = numeric_premium * (1 - self.tax_rate)
                     print(f"  Negative raw premium detected. Effective premium: ${effective_premium:,.2f}. (Assuming tax benefits have been already accounted for.)")
 
-                
                 # Extract other plan parameters with validation
                 try:
                     deductible_individual = pd.to_numeric(param_data.iloc[1, col_idx], errors='coerce')
