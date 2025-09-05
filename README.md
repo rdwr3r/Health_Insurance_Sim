@@ -133,9 +133,9 @@ All commands are methods from a HealthSimulation class object. The only argument
 - **summarize_events**: this will print the frequences of each event for each family member (or the selected family member) for a given simulation. (Primarily useful in troubleshooting unexpected results). | Args:
 	- sim_index (integer index for which simulation to report)
 	- family_member (optional: list of name(s) for which family member to report on)
- - **print_monthly_cost_summaries**: this will analyze the best case, worst case, and average monthly costs for each plan. It will find the simulation where a given plan had the highest monthly cost (worst case), the simulation with the lowest maximum monthly cost (best case), and the average monthly costs across all simulations and print them to the screen. (For clarity, if there were 2 simnulations and Plan A had the following monthly costs: {1, 1, 1, 1...1000}; {998, 998, 998,...999}, the "minimum" (best case) reported would be the one with $999 and the "maximum" (worst case) monthly cost would be the one with $1,000 in it. | Args:
+ - **print_monthly_cost_summaries**: this will analyze the best case, worst case, and average monthly costs for each plan. It will find the simulation where a given plan had the highest monthly cost (worst case), the simulation with the lowest maximum monthly cost (best case), and the average monthly costs across all simulations and print them to the screen. (For clarity, if there were 2 simulations and Plan A had the following monthly costs: {1, 1, 1, 1...1000}; {998, 998, 998,...999}, the "minimum" (best case) reported would be the one with $999 and the "maximum" (worst case) monthly cost would be the one with $1,000 in it. | Args:
 	 - plan_names (optional: if you want summaries for a specific plan or a set of plans, pass in a list of their name(s))
- - **plot_monthly_cost_analysis: this will plot the monthly costs for the minimum, maximum, and average plans (as discussed above) and cumulative costs aggregated throughout the year. | Args:
+ - **plot_monthly_cost_analysis**: this will plot the monthly costs for the minimum, maximum, and average plans (as discussed above) and cumulative costs aggregated throughout the year. | Args:
 	- plan_names (optional: list of name(s) for specific plan(s) you want to have plotted)
  - **add_fixed_events**: Add fixed (deterministic) events that will occur in all simulations. This is useful for known recurring appointments (e.g. physical therapy). | Args:
 	- family_member (name matching Excel file)
@@ -158,8 +158,8 @@ sim.initialize_simulation(n_simulations=1000)
 
 # Add fixed events before running simulation
 sim.add_fixed_events("John", "Physical Therapy", 12, "even")  # Monthly PT
-sim.add_fixed_events("Mary", "Routine PCP Visit", 1, "manual", [100])  # Annual physical
-sim.summarize_fixed_events()  # Show what fixed events were applied```
+sim.add_fixed_events("Mary", "Outpatient Surgery", 1, "manual", [100])  #Planned surgery
+sim.summarize_fixed_events()  # Show what fixed events were applied
 
 # Run Monte Carlo analysis
 sim.run_simulation(seed=42)  # Optional: set seed for reproducibility
