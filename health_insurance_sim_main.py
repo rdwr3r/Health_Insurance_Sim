@@ -49,10 +49,13 @@ class PlanParameters:
     max_oop_family: float
     event_coverage: Dict[str, float]
     cost_results = None
+    hsa_eligible: bool = False 
 
     def calculate_costs(self, 
-                         simulation_events: xr.Dataset,
-                         raw_costs: pd.Series) -> xr.Dataset:
+                       simulation_events: xr.Dataset,
+                       raw_costs: pd.Series,
+                       hsa_contribution: float = 0,
+                       tax_rate: float = 0) -> xr.Dataset:
         """
         Calculate costs for all events in a simulation under this plan's rules.
         Implements proportional threshold decomposition for accurate deductible 
@@ -93,7 +96,14 @@ class PlanParameters:
                 
                 # Add monthly premium on first day of each month
                 if day_of_month == 1:
-                    premium_daily_costs[sim, day] = monthly_premium
+                    daily_cost = monthly_premium
+                    
+                    # Apply monthly HSA tax benefit for HSA-eligible plans
+                    if self.hsa_eligible and hsa_contribution > 0:
+                        monthly_hsa_benefit = (hsa_contribution * tax_rate) / 12
+                        daily_cost -= monthly_hsa_benefit  # Subtract benefit (reduces cost)
+                    
+                    premium_daily_costs[sim, day] = daily_cost
                 
                 # Get previous day's accumulation totals
                 prev_fam_deductible = family_deductible_met[sim, day-1] if day > 0 else 0
@@ -285,6 +295,10 @@ class HealthSimulation:
         tax_section = self.raw_data[self.raw_data.iloc[:, 0] == "Effective Tax Rate"].index[0]
         self.tax_rate = self.raw_data.iloc[tax_section, 1]
         
+        # Get HSA contribution from specified cell
+        hsa_section = self.raw_data[self.raw_data.iloc[:, 0] == "HSA Contribution"].index[0]
+        self.hsa_contribution = self.raw_data.iloc[hsa_section, 1]
+        
         # Extract core simulation data (events and their probabilities)
         self.events_df = self._extract_events()
         
@@ -393,7 +407,7 @@ class HealthSimulation:
             # Skip obviously non-plan columns based on header
             if (pd.isna(header) or header == '' or 
                 (isinstance(header, str) and header.startswith('Unnamed'))):
-                print(f"    Skipping empty/unnamed column")
+                print("    Skipping empty/unnamed column")
                 plan_start_col = col_idx + 1
                 continue
             
@@ -428,7 +442,7 @@ class HealthSimulation:
             # Skip columns with clearly non-plan headers
             if (pd.isna(header) or header == '' or 
                 (isinstance(header, str) and header.startswith('Unnamed'))):
-                print(f"    Rejected: invalid header")
+                print("    Rejected: invalid header")
                 continue
             
             # Validate that this column contains numeric data in the premium row
@@ -456,7 +470,7 @@ class HealthSimulation:
         
         # Stage 5: Extract parameter data section
         print("Stage 5: Extracting plan parameters...")
-        param_data = self.raw_data.iloc[premium_row:premium_row+5].copy()
+        param_data = self.raw_data.iloc[premium_row:premium_row+6].copy()
         print(f"Parameter data shape: {param_data.shape}")
         
         # Stage 6: Create plan objects with enhanced error handling
@@ -485,21 +499,26 @@ class HealthSimulation:
                     effective_premium = numeric_premium * (1 - self.tax_rate)
                     print(f"  Tax-adjusted premium: ${effective_premium:,.2f} (tax rate: {self.tax_rate:.1%})")
                 else: 
-                    effective_premium = numeric_premium * (1-self.tax_rate)
-                    print(f"  Negative raw premium detected. Effective premium: ${effective_premium:,.2f}.")
+                    effective_premium = numeric_premium * (1 - self.tax_rate)
+                    print(f"  Negative raw premium detected. Effective premium: ${effective_premium:,.2f}. (Assuming tax benefits have been already accounted for.)")
 
-                
                 # Extract other plan parameters with validation
                 try:
                     deductible_individual = pd.to_numeric(param_data.iloc[1, col_idx], errors='coerce')
                     max_oop_individual = pd.to_numeric(param_data.iloc[2, col_idx], errors='coerce')
                     deductible_family = pd.to_numeric(param_data.iloc[3, col_idx], errors='coerce')
                     max_oop_family = pd.to_numeric(param_data.iloc[4, col_idx], errors='coerce')
+                    if param_data.iloc[5, col_idx] == 'YES':
+                        print("  HSA Eligible: YES")
+                        hsa_eligible = True
+                    else:
+                        print("  HSA Eligible: NO or NOT FOUND")
+                        hsa_eligible = False
                     
                     # Validate all parameters are numeric
                     if any(pd.isna(val) for val in [deductible_individual, max_oop_individual, 
                                                   deductible_family, max_oop_family]):
-                        print(f"  ERROR: Non-numeric values found in plan parameters. Skipping plan.")
+                        print("  ERROR: Non-numeric values found in plan parameters. Skipping plan.")
                         continue
                         
                     print(f"  Individual deductible: ${deductible_individual:,.2f}")
@@ -542,7 +561,8 @@ class HealthSimulation:
                     max_oop_individual=max_oop_individual,
                     deductible_family=deductible_family,
                     max_oop_family=max_oop_family,
-                    event_coverage=event_coverage
+                    event_coverage=event_coverage,
+                    hsa_eligible=hsa_eligible
                 )
                 
                 print(f"  ✓ Successfully created plan: {plan_name}")
@@ -738,7 +758,9 @@ class HealthSimulation:
             print(f"Started processing {plan_name}")
             cost_results = plan.calculate_costs(
                 simulation_events=self.sim_data,
-                raw_costs=self.raw_costs
+                raw_costs=self.raw_costs,
+                hsa_contribution=self.hsa_contribution, 
+                tax_rate=self.tax_rate
             )
             print(f"Completed calculations for {plan_name}")
             return (plan_name, cost_results)  # Return tuple of name and results
@@ -1136,12 +1158,257 @@ class HealthSimulation:
                 monthly_costs[sim, month-1] = month_medical + month_premium
         
         return monthly_costs
+    
+    def add_fixed_events(self, family_member: str, event_type: str, count: int, 
+                        distribution: str = 'even', specific_days: Optional[List[int]] = None,
+                        seed: Optional[int] = None):
+        """
+        Add fixed events immediately to the simulation data.
+        
+        Args:
+            family_member: Name of family member (must match Excel file)
+            event_type: Type of event (must match Excel file events)
+            count: Number of times this event will occur
+            distribution: How to distribute events ('even', 'random', or 'manual')
+            specific_days: For 'manual' distribution, list of specific day indices (0-364)
+            seed: Random seed for 'random' distribution (optional)
+        
+        Examples:
+            # 12 PT appointments spread evenly through the year
+            sim.add_fixed_events("John", "Physical Therapy", 12, "even")
+            
+            # 4 specialist visits at random times
+            sim.add_fixed_events("Mary", "Specialist Visit", 4, "random", seed=42)
+            
+            # Annual physical on day 100
+            sim.add_fixed_events("John", "Routine PCP Visit", 1, "manual", [100])
+        """
+        if self.sim_data is None:
+            raise ValueError("Must call initialize_simulation() before adding fixed events")
+        
+        # Validate inputs
+        if family_member not in self.family_members:
+            raise ValueError(f"Family member '{family_member}' not found. Available: {self.family_members}")
+        
+        if event_type not in self.events_df['event'].values:
+            raise ValueError(f"Event type '{event_type}' not found. Available: {list(self.events_df['event'])}")
+        
+        if distribution not in ['even', 'random', 'manual']:
+            raise ValueError("Distribution must be 'even', 'random', or 'manual'")
+        
+        if distribution == 'manual' and (specific_days is None or len(specific_days) != count):
+            raise ValueError("For manual distribution, must provide specific_days list with length = count")
+        
+        # Initialize tracking structure if it doesn't exist
+        if not hasattr(self, 'applied_fixed_events'):
+            self.applied_fixed_events = []
+        
+        # Get indices for efficiency
+        member_idx = self.family_members.index(family_member)
+        event_idx = list(self.events_df['event']).index(event_type)
+        n_days = self.sim_data.sizes['day']
+        
+        # Determine when events should occur
+        if distribution == 'even':
+            if count == 1:
+                event_days = [n_days // 2]  # Middle of year for single event
+            else:
+                # Spread evenly through the year
+                spacing = n_days / count
+                event_days = [int(i * spacing + spacing/2) for i in range(count)]
+        
+        elif distribution == 'random':
+            # Set seed if provided for reproducible randomness
+            if seed is not None:
+                np.random.seed(seed)
+            # Randomly distribute throughout the year
+            event_days = sorted(np.random.choice(n_days, size=count, replace=False).tolist())
+        
+        elif distribution == 'manual':
+            # Use the specific days provided
+            event_days = specific_days.copy()  # Copy to avoid reference issues
+            # Validate days are within range
+            if any(day >= n_days or day < 0 for day in event_days):
+                raise ValueError(f"Day indices must be between 0 and {n_days-1}")
+        
+        # Apply events to ALL simulations immediately
+        all_sim_indices = list(range(self.sim_data.sizes['simulation']))
+        
+        for sim_idx in all_sim_indices:
+            for day in event_days:
+                self.sim_data.occurrences.values[day, event_idx, member_idx, sim_idx] = True
+        
+        # Record exactly what we added for later removal/validation
+        fixed_event_record = {
+            'family_member': family_member,
+            'event_type': event_type,
+            'count': count,
+            'distribution': distribution,
+            'days': event_days.copy(),  # The actual days we used
+            'sim_indices': all_sim_indices.copy(),
+            'member_idx': member_idx,  # For efficient removal
+            'event_idx': event_idx,    # For efficient removal
+            'seed': seed  # Record seed used for documentation
+        }
+        
+        self.applied_fixed_events.append(fixed_event_record)
+        
+        print(f"Applied fixed events: {family_member} will have {count} {event_type} events "
+              f"on days {(event_days[:])} ({distribution})")
+    
+    def clear_fixed_events(self):
+        """
+        Remove ALL previously added fixed events from the simulation data.
+        This actually reaches into sim_data and removes the exact instances that were added.
+        """
+        if not hasattr(self, 'applied_fixed_events') or not self.applied_fixed_events:
+            print("No fixed events to clear.")
+            return
+        
+        print(f"Removing {len(self.applied_fixed_events)} fixed event configurations from simulation data...")
+        
+        events_cleared = 0
+        
+        # Go through each recorded fixed event and remove it from sim_data
+        for record in self.applied_fixed_events:
+            member_idx = record['member_idx']
+            event_idx = record['event_idx']
+            days = record['days']
+            sim_indices = record['sim_indices']
+            
+            # Remove each instance that was added
+            for sim_idx in sim_indices:
+                for day in days:
+                    # Set back to False (remove the fixed event)
+                    self.sim_data.occurrences.values[day, event_idx, member_idx, sim_idx] = False
+                    events_cleared += 1
+            
+            print(f"  Removed: {record['family_member']} - {record['event_type']} "
+                  f"x{record['count']} from days {days[:]}")
+        
+        # Clear the tracking list
+        self.applied_fixed_events = []
+        print(f"Fixed events cleared! Removed {events_cleared} total event instances from simulation data.")
+    
+    def summarize_fixed_events(self):
+        """Print a detailed summary of all applied fixed events."""
+        if not hasattr(self, 'applied_fixed_events') or not self.applied_fixed_events:
+            print("No fixed events currently applied.")
+            return
+        
+        print(f"\nApplied Fixed Events ({len(self.applied_fixed_events)} configurations):")
+        print("-" * 70)
+        
+        total_events = 0
+        for i, record in enumerate(self.applied_fixed_events, 1):
+            days_summary = f"{record['days'][:]}"
+            print(f"{i}. {record['family_member']}: {record['event_type']} x{record['count']} "
+                  f"({record['distribution']}) on days {days_summary}")
+            total_events += record['count']
+        
+        print(f"\nTotal fixed events across all family members: {total_events}")
+    
+    def validate_fixed_events(self, sim_index: int = 0, verbose: bool = True):
+        """
+        Validate that applied fixed events actually exist in the simulation data.
+        
+        Args:
+            sim_index: Which simulation to check (default: first simulation)
+            verbose: If True, print detailed validation results
+            
+        Returns:
+            bool: True if all fixed events are found in simulation data
+        """
+        if not hasattr(self, 'applied_fixed_events') or not self.applied_fixed_events:
+            if verbose:
+                print("No fixed events to validate.")
+            return True
+        
+        if verbose:
+            print(f"\nValidating fixed events in simulation {sim_index}:")
+            print("-" * 50)
+        
+        all_valid = True
+        total_expected = 0
+        total_found = 0
+        
+        for record in self.applied_fixed_events:
+            member_idx = record['member_idx']
+            event_idx = record['event_idx']
+            expected_days = record['days']
+            family_member = record['family_member']
+            event_type = record['event_type']
+            
+            # Check each specific day that should have this event
+            found_days = []
+            for day in expected_days:
+                if self.sim_data.occurrences.values[day, event_idx, member_idx, sim_index]:
+                    found_days.append(day)
+            
+            expected_count = len(expected_days)
+            found_count = len(found_days)
+            total_expected += expected_count
+            total_found += found_count
+            
+            is_valid = found_count == expected_count
+            all_valid &= is_valid
+            
+            if verbose:
+                status = "✓" if is_valid else "✗"
+                print(f"{family_member} - {event_type}: "
+                      f"Expected {expected_count} on specific days, Found {found_count} {status}")
+                
+                if not is_valid:
+                    missing_days = set(expected_days) - set(found_days)
+                    if missing_days:
+                        print(f"  Missing on days: {sorted(list(missing_days))[:5]}{'...' if len(missing_days) > 5 else ''}")
+        
+        if verbose:
+            overall_status = "✓ VALID" if all_valid else "✗ INVALID"
+            print(f"\nOverall validation: {total_found}/{total_expected} events found {overall_status}")
+        
+        return all_valid
+    
+    def get_fixed_events_summary_stats(self):
+        """
+        Get summary statistics about applied fixed events.
+        
+        Returns:
+            dict: Summary statistics including total events per family member
+        """
+        if not hasattr(self, 'applied_fixed_events') or not self.applied_fixed_events:
+            return {}
+        
+        stats = {
+            'total_configurations': len(self.applied_fixed_events),
+            'total_events': sum(record['count'] for record in self.applied_fixed_events),
+            'by_family_member': {},
+            'by_event_type': {}
+        }
+        
+        # Aggregate by family member
+        for record in self.applied_fixed_events:
+            member = record['family_member']
+            event_type = record['event_type']
+            count = record['count']
+            
+            if member not in stats['by_family_member']:
+                stats['by_family_member'][member] = 0
+            stats['by_family_member'][member] += count
+            
+            if event_type not in stats['by_event_type']:
+                stats['by_event_type'][event_type] = 0
+            stats['by_event_type'][event_type] += count
+        
+        return stats
 
 if __name__=="__main__":
     foo = HealthSimulation('Health_Monte_Carlo_Input.xlsx')
-    foo.initialize_simulation(100)
+    foo.initialize_simulation(50)
     foo.run_simulation()
     foo.run_cost_analysis()
     foo.print_cost_summaries()
     foo.plot_distributions(ylim=0.015)
     foo.analyze_lowest_cost()
+    foo.print_monthly_cost_summaries()
+    foo.plot_monthly_cost_analysis()
