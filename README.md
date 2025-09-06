@@ -1,7 +1,7 @@
 
 # Healthcare Insurance Monte Carlo Simulation
 
-**Version 1.2.0**
+**Version 2.0.0**
 This is a Monte Carlo simulation tool to analyze healthcare costs and compare insurance plans. It captures the interactions between individual and family deductibles and out-of-pocket maxima for numbers (and probabilities) of events that the user can define. 
 
 This Beta release has been tested for several extreme cases as well as validated against a legacy Monte Carlo that was developed, but given its design for an arbitrary number of events, costs, healthcare plans, and family members, it has not been comprehensively or rigorously tested.
@@ -207,7 +207,7 @@ This is released under the AGPT-3.0 license. See "LICENSE" file for details.
 ### 1.1.1 Release
 -   Corrected a minor bug for the workaround to accommodate HSA-eligible plans when the tax-adjusted premiums started out as a negative number.
 
-### 1.2.0 Release
+### 2.0.0 Release
 -   HSA Support: Added comprehensive HSA functionality including automatic tax benefit calculations for eligible plans
 -   Fixed Events System: Added ability to schedule predetermined events (e.g., recurring appointments) across all simulations
 
