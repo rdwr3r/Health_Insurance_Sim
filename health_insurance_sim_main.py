@@ -15,6 +15,8 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 # =============================================================================
 
+# Version 2.0.0
+
 import pandas as pd
 import numpy as np
 import xarray as xr
