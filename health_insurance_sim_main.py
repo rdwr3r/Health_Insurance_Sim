@@ -904,7 +904,13 @@ class HealthSimulation:
         Args:
             plan_name: Optional specific plan to analyze. If None, plots all plans.
         """
-        plans_to_analyze = [plan_name] if plan_name else list(self.plans.keys())
+        if plan_name:
+            if type(plan_name) == list:
+                plans_to_analyze = plan_name
+            else:
+                plans_to_analyze = [plan_name]
+        else:
+            plans_to_analyze = list(self.plans.keys())
         
         # Create figure with two subplots
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
