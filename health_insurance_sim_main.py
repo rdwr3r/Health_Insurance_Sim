@@ -925,7 +925,7 @@ class HealthSimulation:
             
             # Plot histogram
             ax1.hist(yearly_totals, bins=15, alpha=0.6, color=color, 
-                    density=True, label=f"{plan}\nμ=${mean:,.0f}, σ^2=${std:,.0f}")
+                    density=True, label=f"{plan}\nμ=${mean:,.0f}, σ=${std:,.0f}")
             
             # Plot cumulative distribution
             ax2.hist(yearly_totals, bins=30, alpha = 0.3, density=True, cumulative=True,
@@ -1411,8 +1411,8 @@ class HealthSimulation:
         return stats
 
 if __name__=="__main__":
-    foo = HealthSimulation('Health_Monte_Carlo_Input.xlsx')
-    foo.initialize_simulation(50)
+    foo = HealthSimulation('/Users/beau/Dropbox/Family Room/Job Stuff/2026/Health_Monte_Carlo_Input_2026.xlsx')
+    foo.initialize_simulation(5000)
     foo.run_simulation()
     foo.run_cost_analysis()
     foo.print_cost_summaries()
